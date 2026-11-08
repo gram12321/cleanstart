@@ -1,0 +1,3 @@
+interface:
+  display_name: "Dispatching Parallel Agents"
+  short_description: "Optionally delegate independent work when parallel effort is useful."

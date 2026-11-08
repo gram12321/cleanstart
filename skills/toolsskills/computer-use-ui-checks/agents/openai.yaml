@@ -1,0 +1,3 @@
+interface:
+  display_name: "Computer Use UI Checks"
+  short_description: "Optionally inspect substantial UI and interaction changes in a live browser."
