@@ -3,6 +3,7 @@ import type { KeyboardEvent } from "react";
 import { dictionary } from "./crossword/dictionary";
 import type { DictionaryEntry } from "./crossword/dictionary";
 import { generatePuzzle, placementCells } from "./crossword/generator";
+import { answerLetters, cluePresentation } from "./crossword/layout";
 import type { Direction, Placement, Puzzle } from "./crossword/generator";
 
 type Selection = { row: number; col: number; placementId: number };
@@ -30,11 +31,11 @@ function getStoredEntries(): DictionaryEntry[] {
   try {
     const stored: unknown = JSON.parse(localStorage.getItem("ordvaerk-ordbog") ?? "[]");
     if (!Array.isArray(stored)) return [];
-    return stored.filter((entry) => typeof entry?.word === "string" && /^[A-ZÆØÅ]{2,}$/.test(entry.word) && typeof entry.clue === "string" && entry.clue.length > 0)
+    return stored.filter((entry) => typeof entry?.word === "string" && /^[A-ZÆØÅ]+(?: [A-ZÆØÅ]+)*$/.test(entry.word) && entry.word.replaceAll(" ", "").length >= 1 && typeof entry.clue === "string" && entry.clue.length > 0)
       .map((entry) => ({
         word: entry.word,
         clue: entry.clue,
-        length: entry.word.length,
+        length: entry.word.replaceAll(" ", "").length,
         source: "custom" as const,
         ...(typeof entry.clueGroupId === "string" ? { clueGroupId: entry.clueGroupId } : {}),
         ...(typeof entry.partOfSpeech === "string" ? { partOfSpeech: entry.partOfSpeech } : {}),
@@ -161,10 +162,10 @@ export function Player({ published }: { published: Puzzle | null }) {
     const lines = dictionaryText.split(/\r?\n/).filter((line) => line.trim());
     const parsed = lines.map((line) => {
       const separator = line.indexOf(";");
-      const word = separator < 0 ? "" : line.slice(0, separator).trim().toLocaleUpperCase("da-DK");
-      return { word, clue: separator < 0 ? "" : line.slice(separator + 1).trim(), length: word.length, source: "custom" as const };
+      const word = separator < 0 ? "" : line.slice(0, separator).trim().toLocaleUpperCase("da-DK").replace(/\s+/g, " ");
+      return { word, clue: separator < 0 ? "" : line.slice(separator + 1).trim(), length: answerLetters(word).length, source: "custom" as const };
     });
-    if (!parsed.length || parsed.some(({ word, clue }) => !/^[A-ZÆØÅ]{2,}$/.test(word) || !clue)) {
+    if (!parsed.length || parsed.some(({ word, clue }) => !/^[A-ZÆØÅ]+(?: [A-ZÆØÅ]+)*$/.test(word) || answerLetters(word).length < 1 || !clue)) {
       setDictionaryMessage("Skriv ét ord og én ledetråd pr. linje, adskilt af semikolon.");
       return;
     }
@@ -217,10 +218,22 @@ export function Player({ published }: { published: Puzzle | null }) {
             {puzzle.cells.map((row, r) => row.map((cell, c) => {
               const key = keyOf(r, c);
               if (cell.kind === "covered") return null;
+              if (cell.kind === "block") return <div key={key} className="cell cell-dark" style={{ gridRow: r + 1, gridColumn: c + 1 }} aria-label="Sort felt" />;
+              if (cell.kind === "arrow") return <div key={key} className="cell cell-separator" style={{ gridRow: r + 1, gridColumn: c + 1 }} aria-label={cell.direction === "across" ? "Ordmellemrum, pil til højre" : "Ordmellemrum, pil ned"}>{cell.direction === "across" ? "→" : "↓"}</div>;
               if (cell.kind === "image") return <div key={key} className="cell cell-image" style={{ gridRow: `${r + 1} / span ${cell.height}`, gridColumn: `${c + 1} / span ${cell.width}` }} aria-label="Billedfelt"><span aria-hidden="true">✦</span></div>;
-              if (cell.kind === "clue") return <div key={key} className={`cell cell-clue ${cell.placementIds.length > 1 ? "clue-double" : ""} ${cell.width > 1 && cell.placementIds.length === 2 && cell.placementIds.every(id => puzzle.placements[id].direction === "down") ? "clue-horizontal" : ""}`} style={{ gridRow: `${r + 1} / span ${cell.height}`, gridColumn: `${c + 1} / span ${cell.width}` }}>
-                {[...cell.placementIds].sort((a, b) => cell.width > 1 && puzzle.placements[a].direction === "down" && puzzle.placements[b].direction === "down" ? puzzle.placements[a].col - puzzle.placements[b].col : cell.height > 1 && puzzle.placements[a].direction === "across" && puzzle.placements[b].direction === "across" ? puzzle.placements[a].row - puzzle.placements[b].row : 0).map((id) => { const placement = puzzle.placements[id]; const arrowPosition = cell.placementIds.length === 1 && cell.width > 1 && placement.direction === "down" && placement.col >= c && placement.col < c + cell.width ? { left: `${(placement.col - c + 0.5) * 100 / cell.width}%`, right: "auto", transform: "translateX(-50%)" } : cell.placementIds.length === 1 && cell.height > 1 && placement.direction === "across" && placement.row >= r && placement.row < r + cell.height ? { top: `${(placement.row - r + 0.5) * 100 / cell.height}%`, bottom: "auto", transform: "translateY(-50%)" } : undefined; return <button key={id} className={selection?.placementId === id ? "clue-active" : ""} onClick={() => selectPlacement(placement)} aria-label={`${placement.clue}, ${placement.direction === "across" ? "vandret" : "lodret"}, ${placement.word.length} bogstaver, starter i række ${placement.row + 1}, kolonne ${placement.col + 1}`}><span>{placement.clue}</span><b aria-hidden="true" style={arrowPosition}>{placement.arrow}</b></button>; })}
-              </div>;
+              if (cell.kind === "clue") {
+                const display = cluePresentation({ row: r, col: c, width: cell.width, height: cell.height }, cell.placementIds.map(id => puzzle.placements[id]));
+                return <div key={key} className={`cell cell-clue ${cell.placementIds.length > 1 ? "clue-double" : ""} ${display.horizontal ? "clue-horizontal" : ""}`} style={{ gridRow: `${r + 1} / span ${cell.height}`, gridColumn: `${c + 1} / span ${cell.width}` }}>
+                  {display.words.map(placement => {
+                    const arrowPosition = cell.width > 1 && placement.direction === "down" && (!display.horizontal || display.words.length === 1) && placement.col >= c && placement.col < c + cell.width
+                      ? { left: `${(placement.col - c + 0.5) * 100 / cell.width}%`, right: "auto", transform: "translateX(-50%)" }
+                      : cell.height > 1 && placement.direction === "across" && (display.horizontal || display.words.length === 1) && placement.row >= r && placement.row < r + cell.height
+                        ? { top: `${(placement.row - r + 0.5) * 100 / cell.height}%`, bottom: "auto", transform: "translateY(-50%)" }
+                        : undefined;
+                    return <button key={placement.id} className={selection?.placementId === placement.id ? "clue-active" : ""} onClick={() => selectPlacement(placement)} aria-label={`${placement.clue}, ${placement.direction === "across" ? "vandret" : "lodret"}, ${placement.length} bogstaver, starter i række ${placement.row + 1}, kolonne ${placement.col + 1}`}><span>{placement.clue}</span><b aria-hidden="true" style={arrowPosition}>{placement.arrow}</b></button>;
+                  })}
+                </div>;
+              }
               const isSelected = selection?.row === r && selection.col === c;
               const isError = checked && errors.includes(key);
               return <input key={key} style={{ gridRow: r + 1, gridColumn: c + 1 }} ref={(element) => { cellRefs.current[key] = element; }} className={`cell cell-letter ${selectedCells.has(key) ? "in-word" : ""} ${isSelected ? "selected" : ""} ${isError ? "incorrect" : ""}`} value={answers[key] ?? ""} autoComplete="off" autoCapitalize="characters" spellCheck={false} onClick={() => selectCell(r, c)} onKeyDown={(event) => handleKey(event, r, c)} onChange={(event) => {
@@ -234,7 +247,7 @@ export function Player({ published }: { published: Puzzle | null }) {
             }))}
           </div></div><p className="scroll-hint">Skub til siden for at se hele feltet ↔</p>
 
-          <div className="active-clue"><div className="active-clue-icon">{selectedPlacement?.direction === "down" ? "↓" : "→"}</div><div><span>VALGT LEDTRÅD · {selectedPlacement?.direction === "down" ? "LODRET" : "VANDRET"}</span><strong>{selectedPlacement?.clue ?? "Vælg en ledetråd"}</strong></div><span className="clue-length">{selectedPlacement?.word.length ?? 0} BOGSTAVER</span></div>
+          <div className="active-clue"><div className="active-clue-icon">{selectedPlacement?.direction === "down" ? "↓" : "→"}</div><div><span>VALGT LEDTRÅD · {selectedPlacement?.direction === "down" ? "LODRET" : "VANDRET"}</span><strong>{selectedPlacement?.clue ?? "Vælg en ledetråd"}</strong></div><span className="clue-length">{selectedPlacement?.length ?? 0} BOGSTAVER</span></div>
           <div className="puzzle-actions"><button onClick={checkAnswers}><Icon name="check" /> Tjek svar</button><button onClick={revealLetter}><Icon name="spark" /> Vis et bogstav</button><button onClick={() => { setAnswers({}); setChecked(false); setMessage("Feltet er ryddet."); }}><Icon name="reset" /> Start forfra</button></div>
           <div className="progress-row"><div><strong>{completed ? "Krydsordet er løst!" : "Din fremgang"}</strong><span>{filled} af {letterCells.length} bogstaver</span></div><span>{percent}%</span></div><div className="progress-track"><div style={{ width: `${percent}%` }} /></div>
           <p className="status-message" role="status">{message || "Tip: Klik på et krydsende bogstav for at skifte retning."}</p>

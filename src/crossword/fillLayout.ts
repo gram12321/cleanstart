@@ -1,5 +1,5 @@
 ﻿import type { DictionaryEntry } from "./dictionary";
-import { validateLayout, wordCells, type GridLayout } from "./layout";
+import { answerLetters, fitsBreaks, validateLayout, wordCells, type GridLayout } from "./layout";
 
 export type FillResult =
   | { status: "solved"; answers: Record<string, DictionaryEntry> }
@@ -21,10 +21,11 @@ function makeIndex(entries: readonly DictionaryEntry[], lengths: Set<number>): M
   const seen = new Set<string>();
   // Custom clues override the built-in clue for the same answer.
   for (const entry of [...entries.filter(e => e.source === "custom"), ...entries.filter(e => e.source !== "custom")]) {
-    if (!lengths.has(entry.word.length) || !/^[A-ZÆØÅ]+$/.test(entry.word) || seen.has(entry.word)) continue;
+    if (!lengths.has(answerLetters(entry.word).length) || !/^[A-ZÆØÅ]+(?: [A-ZÆØÅ]+)*$/.test(entry.word) || seen.has(entry.word)) continue;
     seen.add(entry.word);
-    const bucket = groups.get(entry.word.length) ?? [];
-    bucket.push(entry); groups.set(entry.word.length, bucket);
+    const length = answerLetters(entry.word).length;
+    const bucket = groups.get(length) ?? [];
+    bucket.push(entry); groups.set(length, bucket);
   }
   const result = new Map<number, LengthIndex>();
   for (const [length, words] of groups) {
@@ -33,7 +34,8 @@ function makeIndex(entries: readonly DictionaryEntry[], lengths: Set<number>): M
     const full = new Uint32Array(blocks);
     words.forEach((entry, id) => {
       full[id >>> 5] |= 1 << (id & 31);
-      for (let p = 0; p < length; p++) masks[p][ALPHABET.indexOf(entry.word[p])][id >>> 5] |= 1 << (id & 31);
+      const letters = answerLetters(entry.word);
+      for (let p = 0; p < length; p++) masks[p][ALPHABET.indexOf(letters[p])][id >>> 5] |= 1 << (id & 31);
     });
     result.set(length, { entries: words, masks, full });
   }
@@ -126,6 +128,11 @@ export function fillLayout(layout: GridLayout, dictionary: readonly DictionaryEn
     return null;
   }
   const domains = indexes.map(item => item!.full.slice());
+  for (let i = 0; i < domains.length; i++) {
+    indexes[i]!.entries.forEach((entry, id) => {
+      if (!fitsBreaks(layout.words[i], entry.word)) domains[i][id >>> 5] &= ~(1 << (id & 31));
+    });
+  }
   for (let i = 0; i < slots.length; i++) for (let position = 0; position < slots[i].length; position++) {
     const letter = fixedLetters[slots[i][position]];
     if (!letter) continue;

@@ -1,6 +1,6 @@
 ﻿import type { DictionaryEntry } from "./dictionary";
 import { fillLayout } from "./fillLayout";
-import type { GridLayout } from "./layout";
+import { answerLetters, wordCells, type GridLayout } from "./layout";
 import { createTemplateLayout } from "./templateLayouts";
 
 export type Direction = "across" | "down";
@@ -12,12 +12,15 @@ export interface Placement extends DictionaryEntry {
   clueRow: number;
   clueCol: number;
   arrow: string;
+  cells?: [number, number][];
 }
 export interface LetterCell { kind: "letter"; solution: string; placementIds: number[] }
 export interface ClueCell { kind: "clue"; placementIds: number[]; width: number; height: number }
 export interface ImageCell { kind: "image"; width: number; height: number }
 export interface CoveredCell { kind: "covered" }
-export type Cell = LetterCell | ClueCell | ImageCell | CoveredCell;
+export interface BlockCell { kind: "block" }
+export interface ArrowCell { kind: "arrow"; direction: Direction }
+export type Cell = LetterCell | ClueCell | ImageCell | CoveredCell | BlockCell | ArrowCell;
 export interface Puzzle { size: number; cells: Cell[][]; placements: Placement[] }
 
 export function generatePuzzle(size: number, dictionary: DictionaryEntry[]): Puzzle {
@@ -36,6 +39,8 @@ export function generatePuzzle(size: number, dictionary: DictionaryEntry[]): Puz
 export function puzzleFromLayout(layout: GridLayout, answers: Record<string, DictionaryEntry>): Puzzle {
   const size = layout.width;
   const cells = Array.from({ length: size }, () => Array<Cell>(size));
+  for (const block of layout.blocks ?? []) cells[block.row][block.col] = { kind: "block" };
+  for (const arrow of layout.arrows ?? []) cells[arrow.row][arrow.col] = { kind: "arrow", direction: arrow.direction };
   for (const clue of layout.clues) {
     for (let r = clue.row; r < clue.row + clue.height; r++) for (let c = clue.col; c < clue.col + clue.width; c++) cells[r][c] = { kind: "covered" };
     cells[clue.row][clue.col] = { kind: "clue", placementIds: [], width: clue.width, height: clue.height };
@@ -53,13 +58,14 @@ export function puzzleFromLayout(layout: GridLayout, answers: Record<string, Dic
       ...answers[word.id], id, row: word.start.row, col: word.start.col, direction: word.direction,
       clueRow: clue.row, clueCol: clue.col,
       arrow: straight ? (word.direction === "across" ? "→" : "↓") : (word.direction === "across" ? "↓→" : "→↓"),
+      ...(word.breaks?.length ? { cells: wordCells(word).map(({ row, col }): [number, number] => [row, col]) } : {}),
     };
     const clueCell = cells[clue.row][clue.col];
     if (clueCell.kind === "clue") clueCell.placementIds.push(id);
-    for (const [r, c] of placementCells(placement)) {
+    for (const [i, [r, c]] of placementCells(placement).entries()) {
       const current = cells[r][c];
       if (current?.kind === "letter") current.placementIds.push(id);
-      else cells[r][c] = { kind: "letter", solution: placement.word[word.direction === "across" ? c - placement.col : r - placement.row], placementIds: [id] };
+      else cells[r][c] = { kind: "letter", solution: answerLetters(placement.word)[i], placementIds: [id] };
     }
     return placement;
   });
@@ -67,7 +73,7 @@ export function puzzleFromLayout(layout: GridLayout, answers: Record<string, Dic
 }
 
 export function placementCells(placement: Placement): [number, number][] {
-  return Array.from({ length: placement.word.length }, (_, i) => [
+  return placement.cells ?? Array.from({ length: answerLetters(placement.word).length }, (_, i) => [
     placement.row + (placement.direction === "down" ? i : 0),
     placement.col + (placement.direction === "across" ? i : 0),
   ]);

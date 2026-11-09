@@ -24,4 +24,4 @@ Ordværk generates and plays Danish-style crosswords, with clues and direction a
 ## Designer workflow
 
 - Select a horizontal or vertical slot and see words matching its length and current letters. A displayed suggestion must have a verified complete solution for the current grid. Search-limited candidates are reported as uncertain.
-- The current editor starts from a generated template and supports manual letter entry and inserting suggestions. Layout editing, and automatic completion are not yet implemented. The designer can set per-word clues and publish one completed puzzle locally to the player page.
+- The editor starts from a generated template and supports manual letter entry, inserting suggestions, and editing cell types through a toolbar. It derives slots and up to two outward-facing arrows per clue area; rectangular clue areas, dark blocks and directional separators within multi-word answers are supported. Invalid intermediate layouts highlight affected cells and cannot be searched or published. Automatic completion is not yet implemented. The designer can set per-word clues and publish one completed puzzle locally to the player page.
