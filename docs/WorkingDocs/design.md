@@ -18,5 +18,10 @@ Ordværk generates and plays Danish-style crosswords, with clues and direction a
 
 ## Implemented layout scope
 
-- The playable generator fills one predefined layout for each size and can transpose it. These layouts use single and two-cell clue areas and bent arrows, and have no unused cells.
-- Image areas are supported by the separate layout model but are not yet used in playable puzzles. The current layouts favour answers of two to four letters.
+- The editor uses connected generated templates for each supported size. The current layouts favour answers of two to four letters.
+- The layout model supports clue and image areas; the editor displays template non-letter areas as clue or placeholder cells.
+
+## Designer workflow
+
+- Select a horizontal or vertical slot and see words matching its length and current letters. A displayed suggestion must have a verified complete solution for the current grid. Search-limited candidates are reported as uncertain.
+- The current editor starts from a generated template and supports manual letter entry and inserting suggestions. Layout editing, and automatic completion are not yet implemented. The designer can set per-word clues and publish one completed puzzle locally to the player page.

@@ -63,3 +63,10 @@ test("crossing domains work beyond 32 candidates and retain custom overrides", (
     expect(new Set(answers.map(entry => entry.word)).size).toBe(4);
   }
 });
+
+test("fixed letters constrain the entire solution, including crossings", () => {
+  const words = entries(["AB", "CD", "AC", "BD", "AX"]);
+  expect(fillLayout(layout, words, 10000, { "1,1": "A", "1,2": "B" }).status).toBe("solved");
+  expect(fillLayout(layout, words, 10000, { "1,1": "A", "1,2": "X" }).status).toBe("unsatisfiable");
+  expect(fillLayout(layout, words, 10000, { "1,1": "Z" }).status).toBe("unsatisfiable");
+});

@@ -1,10 +1,12 @@
 # Ordværk
 
-A Danish crossword app with clues and arrows inside the grid. It generates connected crosswords in three sizes using a local Danish dictionary.
+Ordværk har en forside til at løse krydsord og et værksted til at konstruere dem. Vælg et vandret eller lodret ord i designerens tomme felt, og indsæt et af forslagene. Du kan også skrive og slette bogstaver direkte. Klik igen på et krydsningsfelt for at skifte retning.
 
-Select a clue or letter and type the answer. Click a crossing again to change direction. The app can check letters, reveal a letter, and clear the board. On narrow screens, scroll the board horizontally.
+Hvert vist forslag er kontrolleret mod hele feltet: løseren har fundet en samlet udfyldning med de aktuelle bogstaver og uden gentagne ord. Højst 40 bekræftede forslag vises. Ord, hvor søgningen når beregningsgrænsen, er uafklarede og tælles særskilt. Ingen forslag betyder derfor ikke nødvendigvis, at en løsning er umulig. Et nyt felt bruger en af de eksisterende skabeloner; fri redigering af selve feltets form og automatisk udfyldning er endnu ikke tilgængelige.
 
-The dictionary combines a small hand-written list with short clues derived from DanNet. Automatically generated clues are not individually reviewed and may be broad, ambiguous, or unsuitable. Add entries under **Udvid ordbogen**, one per line in the form `ORD;ledetråd`. Custom entries are saved in the current browser and used the next time a puzzle is generated; a custom entry overrides built-in clues for the same word. Words must contain at least two Danish letters and fit in the chosen grid. Puzzle progress is not saved. The generator fills a fixed clues-in-squares layout for each size, or its transpose, without unused cells. It selects crossing words at random; most answers are two to four letters. Clues can have more than one plausible answer.
+Når alle ord er udfyldt, kan designeren udgive krydsordet og bruge ordbogens ledetråde eller skrive sine egne. Det senest udgivne krydsord gemmes lokalt og åbnes på forsiden i samme browser; det deles ikke med andre enheder. Et nyt udgivet krydsord erstatter det forrige. Den ufærdige kladde gemmes ikke ved genindlæsning.
+
+Den lokale ordbog indeholder en mindre håndskrevet liste og ord fra DanNet. Automatiske ledetråde er ikke individuelt gennemgået. Tilføj egne ord under **Udvid ordbogen**, ét pr. linje som `ORD;ledetråd`; de gemmes i browseren.
 
 ## Dictionary data and attribution
 

@@ -41,7 +41,7 @@ function makeIndex(entries: readonly DictionaryEntry[], lengths: Set<number>): M
 }
 
 /** Fill a complete layout, propagating crossing constraints before each search step. */
-export function fillLayout(layout: GridLayout, dictionary: readonly DictionaryEntry[], maxNodes = 10000): FillResult {
+export function fillLayout(layout: GridLayout, dictionary: readonly DictionaryEntry[], maxNodes = 10000, fixedLetters: Readonly<Record<string, string>> = {}): FillResult {
   const errors = validateLayout(layout);
   if (errors.length) return { status: "invalid", errors };
   const index = makeIndex(dictionary, new Set(layout.words.map(word => word.length)));
@@ -126,6 +126,14 @@ export function fillLayout(layout: GridLayout, dictionary: readonly DictionaryEn
     return null;
   }
   const domains = indexes.map(item => item!.full.slice());
+  for (let i = 0; i < slots.length; i++) for (let position = 0; position < slots[i].length; position++) {
+    const letter = fixedLetters[slots[i][position]];
+    if (!letter) continue;
+    const letterIndex = ALPHABET.indexOf(letter);
+    if (letterIndex < 0) return { status: "unsatisfiable" };
+    const mask = indexes[i]!.masks[position][letterIndex];
+    for (let block = 0; block < domains[i].length; block++) domains[i][block] &= mask[block];
+  }
   const solution = search(domains, domains.map((_, i) => i));
   if (!solution) return { status: limited ? "limit" : "unsatisfiable" };
   const answers = Object.fromEntries(layout.words.map((word, i) => {

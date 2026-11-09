@@ -30,6 +30,11 @@ export function generatePuzzle(size: number, dictionary: DictionaryEntry[]): Puz
     if (result.status === "solved") { layout = candidate; answers = result.answers; break; }
   }
   if (!layout || !answers) throw new Error("Krydsordet kunne ikke udfyldes med de tilgængelige ord. Prøv igen.");
+  return puzzleFromLayout(layout, answers);
+}
+
+export function puzzleFromLayout(layout: GridLayout, answers: Record<string, DictionaryEntry>): Puzzle {
+  const size = layout.width;
   const cells = Array.from({ length: size }, () => Array<Cell>(size));
   for (const clue of layout.clues) {
     for (let r = clue.row; r < clue.row + clue.height; r++) for (let c = clue.col; c < clue.col + clue.width; c++) cells[r][c] = { kind: "covered" };

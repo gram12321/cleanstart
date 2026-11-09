@@ -1,22 +1,17 @@
 # Application Flow
 
-Document state ownership, domain rules, and user interactions here after they are approved and implemented.
-
 ## State owners
 
-- `src/crossword/` owns the dictionary entries, derived word-length index, generated grid and placement rules, independently of React.
-- `src/App.tsx` owns the current puzzle, selection, entered letters and display state. Custom dictionary entries are stored in browser local storage.
+- `src/crossword/` owns dictionary entries, layouts and the constraint solver independently of React. A worker checks suggestions away from the interface thread.
+- `src/App.tsx` owns the selected template and slot, entered letters and display state. Custom dictionary entries are stored in browser local storage.
 
-## Actions and interactions
+## Designer interactions and rules
 
-- Generating a puzzle resets the board. Selecting a clue selects its word; selecting a crossing again switches direction. Players can enter letters, check them, reveal a letter and clear the board.
-- Custom entries are added as `WORD;clue` lines and take effect on the next generation.
-- The local dictionary includes a reproducibly filtered DanNet release. Short clues are derived from same-synset words, direct hypernyms, short definitions and a Danish city rule; each is tied to the answer's synset. Multiple meanings of a word remain separate candidates. A custom word overrides all built-in candidates for that spelling.
-- Dictionary entries store their answer length and source. Older custom entries in local storage are upgraded in memory when loaded; newly saved entries include the derived length and custom source.
+- A new template starts empty. Select a slot via its arrow or a letter cell; clicking a crossing again changes direction. Enter letters directly or insert a suggestion.
+- Each displayed suggestion matches all entered letters and has a complete solution using distinct dictionary words. A bounded search may return an uncertain result; those candidates are counted but not presented as confirmed. At most 40 confirmed suggestions are displayed.
+- Changing letters, selection, template or dictionary cancels the previous calculation and starts a new one. Clearing a selected word also clears its crossing letters.
+- Custom entries use `WORD;clue` and override built-in entries of the same spelling. Puzzle progress is not saved.
+- Existing templates define connected Scandinavian-style clue areas and slots; their shape cannot yet be edited in the interface. Clues derived from DanNet are not individually reviewed.
 
-## Domain rules
-
-- Each grid is completely covered by letter cells and clue areas. Clue areas may span one or two cells and contain one or two clues. Arrows can turn before an answer starts; selecting a clue highlights its answer.
-- The generator chooses a predefined connected layout for the selected size, optionally transposes it, and fills all slots together using indexed crossing constraints and bounded backtracking. It reports an error and keeps the existing puzzle if it cannot fill a new one.
-- Answers are distinct and drawn from the supplied dictionary; custom clues override built-in clues for the same spelling. Answers in the current layouts are two to four letters. Automatic clues are not individually reviewed and solutions are not guaranteed unique.
-- The layouts currently use clue areas only; the layout model supports image areas, but the playable layouts do not yet include images.
+- The designer can publish a complete grid with distinct dictionary words and optional per-slot clues. The latest published puzzle is stored locally in the browser and shown on the player page; publishing replaces the previous one. Player answers and unfinished designer work are not persisted.
+- The restored player page can also generate a random puzzle. Checking and revealing compare against the selected puzzle solution.
