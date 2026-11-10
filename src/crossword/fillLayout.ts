@@ -1,10 +1,13 @@
-﻿import type { DictionaryEntry } from "./dictionary";
+﻿import { indexWordScores, type DictionaryEntry } from "./dictionary";
 import { answerLetters, fitsBreaks, validateLayout, wordCells, type GridLayout } from "./layout";
 
 export type FillResult =
   | { status: "solved"; answers: Record<string, DictionaryEntry> }
   | { status: "invalid"; errors: string[] }
-  | { status: "unsatisfiable" | "limit" };
+  | { status: "unsatisfiable" }
+  | { status: "limit"; answers?: Record<string, DictionaryEntry> };
+
+export interface FillProgress { nodes: number; solutions: number; bestScore: number | null }
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZÆØÅ";
 interface LengthIndex { entries: DictionaryEntry[]; masks: Uint32Array[][]; full: Uint32Array }
@@ -43,7 +46,7 @@ function makeIndex(entries: readonly DictionaryEntry[], lengths: Set<number>): M
 }
 
 /** Fill a complete layout, propagating crossing constraints before each search step. */
-export function fillLayout(layout: GridLayout, dictionary: readonly DictionaryEntry[], maxNodes = 10000, fixedLetters: Readonly<Record<string, string>> = {}): FillResult {
+export function fillLayout(layout: GridLayout, dictionary: readonly DictionaryEntry[], maxNodes = 10000, fixedLetters: Readonly<Record<string, string>> = {}, optimize = false, onProgress?: (progress: FillProgress) => void): FillResult {
   const errors = validateLayout(layout);
   if (errors.length) return { status: "invalid", errors };
   const index = makeIndex(dictionary, new Set(layout.words.map(word => word.length)));
@@ -60,8 +63,14 @@ export function fillLayout(layout: GridLayout, dictionary: readonly DictionaryEn
       }
     });
   }
+  const scores = indexWordScores(dictionary);
+  let best: Uint32Array[] | null = null;
+  let bestScore = -1;
+  let bestKey = "";
   let nodes = 0;
+  let solutions = 0;
   let limited = false;
+  const report = () => onProgress?.({ nodes, solutions, bestScore: bestScore < 0 ? null : bestScore });
   function propagate(domains: Uint32Array[], queue: number[]): boolean {
     const queued = new Set(queue);
     const enqueue = (i: number) => { if (!queued.has(i)) { queue.push(i); queued.add(i); } };
@@ -104,20 +113,43 @@ export function fillLayout(layout: GridLayout, dictionary: readonly DictionaryEn
     return true;
   }
   function search(domains: Uint32Array[], queue: number[]): Uint32Array[] | null {
-    if (++nodes > maxNodes) { limited = true; return null; }
+    if (nodes >= maxNodes) { limited = true; return null; }
+    nodes++;
+    if (nodes % 100 === 0) report();
     if (!propagate(domains, queue)) return null;
+    if (optimize) {
+      let upper = 0;
+      for (let i = 0; i < domains.length; i++) {
+        let max = 0;
+        domains[i].forEach((value, block) => {
+          while (value) { const bit = 31 - Math.clz32(value & -value); max = Math.max(max, scores.get(indexes[i]!.entries[(block << 5) + bit].word) ?? 0); value = (value & (value - 1)) >>> 0; }
+        });
+        upper += max;
+      }
+      if (upper <= bestScore) return null;
+    }
     let target = -1, smallest = Infinity;
     for (let i = 0; i < domains.length; i++) {
       let count = 0;
       for (const value of domains[i]) count += countBits(value);
       if (count > 1 && count < smallest) { target = i; smallest = count; }
     }
-    if (target < 0) return domains;
+    if (target < 0) {
+      solutions++;
+      if (!optimize) return domains;
+      const words = domains.map((domain, i) => { const block = domain.findIndex(value => value !== 0); const id = (block << 5) + (31 - Math.clz32(domain[block] & -domain[block])); return indexes[i]!.entries[id].word; });
+      const score = words.reduce((sum, word) => sum + (scores.get(word) ?? 0), 0);
+      const key = words.join("\0");
+      if (score > bestScore || (score === bestScore && key.localeCompare(bestKey, "da") < 0)) { best = domains; bestScore = score; bestKey = key; }
+      report();
+      return null;
+    }
     const ids: number[] = [];
     domains[target].forEach((value, block) => {
       while (value) { const bit = 31 - Math.clz32(value & -value); ids.push((block << 5) + bit); value = (value & (value - 1)) >>> 0; }
     });
-    for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
+    if (optimize) ids.sort((a, b) => (scores.get(indexes[target]!.entries[b].word) ?? 0) - (scores.get(indexes[target]!.entries[a].word) ?? 0) || indexes[target]!.entries[a].word.localeCompare(indexes[target]!.entries[b].word, "da"));
+    else for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
     for (const id of ids) {
       const next = domains.map(domain => domain.slice());
       next[target].fill(0); next[target][id >>> 5] = 1 << (id & 31);
@@ -141,7 +173,9 @@ export function fillLayout(layout: GridLayout, dictionary: readonly DictionaryEn
     const mask = indexes[i]!.masks[position][letterIndex];
     for (let block = 0; block < domains[i].length; block++) domains[i][block] &= mask[block];
   }
-  const solution = search(domains, domains.map((_, i) => i));
+  const found = search(domains, domains.map((_, i) => i));
+  report();
+  const solution = optimize ? best : found;
   if (!solution) return { status: limited ? "limit" : "unsatisfiable" };
   const answers = Object.fromEntries(layout.words.map((word, i) => {
     const domain = solution[i];
@@ -149,5 +183,5 @@ export function fillLayout(layout: GridLayout, dictionary: readonly DictionaryEn
     const id = (block << 5) + (31 - Math.clz32(domain[block] & -domain[block]));
     return [word.id, indexes[i]!.entries[id]];
   }));
-  return { status: "solved", answers };
+  return limited ? { status: "limit", answers } : { status: "solved", answers };
 }

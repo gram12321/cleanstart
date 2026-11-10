@@ -1,4 +1,5 @@
 import dannetData from "./data/dannet.json" with { type: "json" };
+import { shortClues } from "./data/shortClues";
 
 export interface DictionaryEntry {
   word: string;
@@ -8,10 +9,32 @@ export interface DictionaryEntry {
   /** Shared concept for curated, interchangeable clue answers. */
   clueGroupId?: string;
   partOfSpeech?: string;
-  source: "starter" | "custom" | "dannet";
+  source: "starter" | "shortClues" | "custom" | "dannet";
 }
 
 export type DictionaryByLength = ReadonlyMap<number, readonly DictionaryEntry[]>;
+
+/** Source scores express word priority, not the quality of an individual clue. */
+export const WORD_SOURCE_SCORES: Readonly<Record<DictionaryEntry["source"], number>> = {
+  dannet: 1,
+  starter: 1,
+  shortClues: 2,
+  custom: 3,
+};
+
+/** Score for one dictionary entry and its clue, rather than the spelling overall. */
+export function getEntryScore(entry: Pick<DictionaryEntry, "source">): number {
+  return WORD_SOURCE_SCORES[entry.source];
+}
+
+/** A spelling in multiple sources receives the highest source score, never a sum. */
+export function indexWordScores(entries: readonly DictionaryEntry[]): ReadonlyMap<string, number> {
+  const scores = new Map<string, number>();
+  for (const { word, source } of entries) {
+    scores.set(word, Math.max(scores.get(word) ?? 0, WORD_SOURCE_SCORES[source]));
+  }
+  return scores;
+}
 
 export function indexDictionaryByLength(entries: readonly DictionaryEntry[]): DictionaryByLength {
   const index = new Map<number, DictionaryEntry[]>();
@@ -23,7 +46,7 @@ export function indexDictionaryByLength(entries: readonly DictionaryEntry[]): Di
   return index;
 }
 
-// A small, hand-written starting dictionary. Each answer has a matching clue.
+// Remaining hand-written starting dictionary; curated short answers live in data/shortClues.ts.
 const entries = `
 ABE|Klatrende dyr
 AGERN|Frugt fra eg
@@ -35,7 +58,6 @@ ANDEL|En del af noget
 ANEMONE|Forårsblomst
 ANKER|Holder skibet
 ANTAL|Hvor mange
-AR|Mærke på huden
 AREAL|Flademål
 ARK|Stykke papir
 ARM|Kropsdel
@@ -241,7 +263,6 @@ VEJ|Her kører biler
 VIND|Luft i bevægelse
 VIN|Drik af druer
 VINTER|Årstid med frost
-Ø|Land omgivet af vand
 ØJE|Bruges til at se
 ØL|Drik af malt
 ØRE|Bruges til at høre
@@ -347,13 +368,23 @@ VÆRK|Skabt arbejde eller produkt
 ØRKEN|Tørt område med lidt regn
 `.trim();
 
-const starterDictionary: DictionaryEntry[] = entries.split("\n").map((line) => {
-  const [word, clue, clueGroupId, partOfSpeech] = line.trim().split("|");
-  return { word, clue, length: word.length, clueGroupId, partOfSpeech, source: "starter" as const };
-}).filter(({ word, clue }) => /^[A-ZÆØÅ]{2,}$/.test(word) && Boolean(clue) && clue.length <= 18 && clue.trim().split(/\s+/).length <= 2);
+const starterDictionary: DictionaryEntry[] = entries.split("\n").flatMap((line) => {
+  const parts = line.trim().split("|");
+  const [word, ...fields] = parts;
+  const hasMetadata = parts.at(-1) === "substantiv" && parts.length >= 4;
+  const clues = hasMetadata ? fields.slice(0, -2) : fields;
+  const clueGroupId = hasMetadata ? fields.at(-2) : undefined;
+  const partOfSpeech = hasMetadata ? fields.at(-1) : undefined;
+  return clues.map(clue => ({ word, clue, length: word.length, clueGroupId, partOfSpeech, source: "starter" as const }));
+}).filter(({ word, clue }) => /^[A-ZÆØÅ]+$/.test(word) && Boolean(clue) && clue.length <= 18 && clue.trim().split(/\s+/).length <= 2);
+
+const curatedShortDictionary: DictionaryEntry[] = shortClues.split("\n").flatMap((line) => {
+  const [word, ...clues] = line.split("|");
+  return clues.map(clue => ({ word, clue, length: word.length, source: "shortClues" as const }));
+});
 
 const dannetDictionary: DictionaryEntry[] = dannetData.map(([word, clue, clueGroupId, partOfSpeech]) => ({
   word, clue, clueGroupId, partOfSpeech, length: word.length, source: "dannet",
 }));
 
-export const dictionary: DictionaryEntry[] = [...starterDictionary, ...dannetDictionary];
+export const dictionary: DictionaryEntry[] = [...curatedShortDictionary, ...starterDictionary, ...dannetDictionary];

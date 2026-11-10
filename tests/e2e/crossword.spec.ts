@@ -139,12 +139,12 @@ test("play, check, reveal and create a new puzzle", async ({ page }) => {
 test("custom words persist and narrow screens remain usable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await page.getByText("Udvid ordbogen").click();
-  await page.getByLabel("Ét ord og én ledetråd pr. linje, adskilt af semikolon").fill("KAFFE;Varm drik");
+  await page.locator(".dictionary-section summary").click();
+  await page.getByLabel("Ledetråd: svar|svar eller ord;ledetråd;ledetråd pr. linje").fill("KAFFE;Varm drik");
   await page.getByRole("button", { name: "Gem ord" }).click();
   await expect(page.getByText("1 eget ord")).toBeVisible();
   await page.reload();
-  await page.getByText("Udvid ordbogen").click();
+  await page.locator(".dictionary-section summary").click();
   await expect(page.getByText("1 eget ord")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   const cell = page.locator("input.cell-letter").first();

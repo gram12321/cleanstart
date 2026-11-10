@@ -5,7 +5,7 @@ import type { DictionaryEntry } from "../../src/crossword/dictionary";
 
 const layout: GridLayout = {
   width: 3, height: 3,
-  images: [{ row: 0, col: 0, width: 1, height: 1 }],
+  images: [{ id: "image", row: 0, col: 0, width: 1, height: 1 }],
   clues: [
     { id: "top-left", row: 0, col: 1, width: 1, height: 1 },
     { id: "top-right", row: 0, col: 2, width: 1, height: 1 },
@@ -69,4 +69,40 @@ test("fixed letters constrain the entire solution, including crossings", () => {
   expect(fillLayout(layout, words, 10000, { "1,1": "A", "1,2": "B" }).status).toBe("solved");
   expect(fillLayout(layout, words, 10000, { "1,1": "A", "1,2": "X" }).status).toBe("unsatisfiable");
   expect(fillLayout(layout, words, 10000, { "1,1": "Z" }).status).toBe("unsatisfiable");
+});
+
+
+test("optimization maximizes the score of the whole grid and respects fixed letters", () => {
+  const low = ["AB", "CD", "AC", "BD"].map(word => ({ word, length: 2, clue: word, source: "starter" as const }));
+  const high = ["EF", "GH", "EG", "FH"].map(word => ({ word, length: 2, clue: word, source: "custom" as const }));
+  const result = fillLayout(layout, [...low, ...high], 10000, {}, true);
+  expect(result.status).toBe("solved");
+  if (result.status === "solved") expect(Object.values(result.answers).every(entry => entry.source === "custom")).toBe(true);
+  const fixed = fillLayout(layout, [...low, ...high], 10000, { "1,1": "A" }, true);
+  expect(fixed.status).toBe("solved");
+  if (fixed.status === "solved") expect(fixed.answers["across-1"].word[0]).toBe("A");
+  expect(fillLayout(layout, [...low, ...high], 0, {}, true).status).toBe("limit");
+});
+
+test("a limited optimization retains a valid best-found solution and reports progress", () => {
+  const words = "ABCD".split("").flatMap(a => "ABCD".split("").map(b => a + b));
+  const dictionary = words.map(word => ({ word, length: 2, clue: word, source: word.startsWith("A") ? "custom" as const : "starter" as const }));
+  let observed = false;
+  let limitedWithSolution = false;
+  for (let limit = 1; limit <= 100 && !limitedWithSolution; limit++) {
+    const result = fillLayout(layout, dictionary, limit, {}, true, progress => {
+      if (progress.solutions > 0 && progress.bestScore !== null) observed = true;
+    });
+    if (result.status === "limit" && result.answers) {
+      limitedWithSolution = true;
+      const answers = result.answers;
+      expect(new Set(Object.values(answers).map(entry => entry.word)).size).toBe(4);
+      expect(answers["across-1"].word[0]).toBe(answers["down-1"].word[0]);
+      expect(answers["across-1"].word[1]).toBe(answers["down-2"].word[0]);
+      expect(answers["across-2"].word[0]).toBe(answers["down-1"].word[1]);
+      expect(answers["across-2"].word[1]).toBe(answers["down-2"].word[1]);
+    }
+  }
+  expect(observed).toBe(true);
+  expect(limitedWithSolution).toBe(true);
 });

@@ -10,6 +10,7 @@ Ordværk generates and plays Danish-style crosswords, with clues and direction a
 
 - Generate connected horizontal and vertical words of varying lengths from Danish words and clues.
 - The dictionary combines short clues from a local starting list with clues derived from DanNet; users can add their own word and clue pairs.
+- A spelling can have multiple clues and a clue can describe multiple spellings. Designers can add distinct pairs and select a clue together with a verified answer; changing answer letters clears affected selected clues.
 - Dictionary answers carry their normalized spelling, derived letter count, source, and optional linguistic/concept metadata. Length buckets are derived from the entries for generator lookup.
 - Curated answers that can serve the same clue concept share a `clueGroupId`; each answer still has its own spelling, clue, and length so the generator can choose a crossing-compatible variant.
 - Imported DanNet clues are one or two words derived from the source synset, a direct hypernym, a short definition, or the Danish city rule. Entries retain their source synset as a clue group. Automatically derived clues have not been individually reviewed.
@@ -19,7 +20,9 @@ Ordværk generates and plays Danish-style crosswords, with clues and direction a
 ## Implemented layout scope
 
 - The editor uses connected generated templates for each supported size. The current layouts favour answers of two to four letters.
-- The layout model supports clue and image areas; the editor displays template non-letter areas as clue or placeholder cells.
+- The layout model supports rectangular clue and image areas. Designers drag across grid cells to mark an image area of any size, choose a bundled illustration or upload an image, and drag within the placed image to adjust its crop.
+- Edited layouts may contain separate groups of words without crossings between them. Each word still needs a valid clue, and all letter cells must belong to a word.
+- An image area is unused as a cue by default. Designers link it to the nearest answer by clicking the marker beside its row or column. Each linked word gets a directional arrow on the image that players can select to answer that word.
 
 ## Designer workflow
 

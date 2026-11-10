@@ -1,9 +1,10 @@
+import { customEntryKey, parseCustomEntries } from "./crossword/customDictionary";
 import { useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { dictionary } from "./crossword/dictionary";
 import type { DictionaryEntry } from "./crossword/dictionary";
 import { generatePuzzle, placementCells } from "./crossword/generator";
-import { answerLetters, cluePresentation } from "./crossword/layout";
+import { cluePresentation } from "./crossword/layout";
 import type { Direction, Placement, Puzzle } from "./crossword/generator";
 
 type Selection = { row: number; col: number; placementId: number };
@@ -43,7 +44,7 @@ function getStoredEntries(): DictionaryEntry[] {
   } catch { return []; }
 }
 
-export function Player({ published }: { published: Puzzle | null }) {
+export function Player({ published, preview = false }: { published: Puzzle | null; preview?: boolean }) {
   const [customEntries, setCustomEntries] = useState<DictionaryEntry[]>(getStoredEntries);
   const allEntries = useMemo(() => {
     const customWords = new Set(customEntries.map((entry) => entry.word));
@@ -159,18 +160,13 @@ export function Player({ published }: { published: Puzzle | null }) {
   }
 
   function addEntries() {
-    const lines = dictionaryText.split(/\r?\n/).filter((line) => line.trim());
-    const parsed = lines.map((line) => {
-      const separator = line.indexOf(";");
-      const word = separator < 0 ? "" : line.slice(0, separator).trim().toLocaleUpperCase("da-DK").replace(/\s+/g, " ");
-      return { word, clue: separator < 0 ? "" : line.slice(separator + 1).trim(), length: answerLetters(word).length, source: "custom" as const };
-    });
-    if (!parsed.length || parsed.some(({ word, clue }) => !/^[A-ZÆØÅ]+(?: [A-ZÆØÅ]+)*$/.test(word) || answerLetters(word).length < 1 || !clue)) {
-      setDictionaryMessage("Skriv ét ord og én ledetråd pr. linje, adskilt af semikolon.");
+    const parsed = parseCustomEntries(dictionaryText);
+    if (!parsed) {
+      setDictionaryMessage("Skriv f.eks. Pigenavn: Hanne|Sigrid eller ORD;ledetråd.");
       return;
     }
-    const merged = new Map(customEntries.map((entry) => [entry.word, entry]));
-    parsed.forEach((entry) => merged.set(entry.word, entry));
+    const merged = new Map(getStoredEntries().map((entry) => [customEntryKey(entry), entry]));
+    parsed.forEach((entry) => merged.set(customEntryKey(entry), entry));
     const next = [...merged.values()];
     try { localStorage.setItem("ordvaerk-ordbog", JSON.stringify(next)); } catch {
       setDictionaryMessage("Ordene kunne ikke gemmes i browseren.");
@@ -189,8 +185,8 @@ export function Player({ published }: { published: Puzzle | null }) {
         <span className="topbar-edition">LAVET TIL ORDGLÆDE <span>✳</span></span>
       </header>
 
-      <main id="top" className="workspace">
-        <section className="intro-panel">
+      <main id="top" className={`workspace${preview ? " preview-workspace" : ""}`}>
+        {!preview && <section className="intro-panel">
           <div className="intro-copy">
             <div className="eyebrow"><span className="eyebrow-line" /> DIT EGET KRYDSORD</div>
             <h1>Ord, der<br /><em>krydser.</em></h1>
@@ -208,7 +204,7 @@ export function Player({ published }: { published: Puzzle | null }) {
 
           <div className="howto"><div className="howto-icon">✳</div><div><strong>Sådan spiller du</strong><p>Vælg et felt og skriv dit svar. Pilene viser, hvilken vej ordet går.</p></div></div>
           <div className="side-foot">LAVET MED <span>♥</span> OG GODE ORD</div>
-        </section>
+        </section>}
 
         <section className="puzzle-panel" aria-label="Krydsord">
           <div className="puzzle-header"><div><div className="section-label"><span>02</span> TID TIL AT TÆNKE</div><h2>Dit krydsord <span>✳</span></h2></div><div className="puzzle-tag"><span /> KLAR TIL ORD</div></div>
@@ -220,7 +216,7 @@ export function Player({ published }: { published: Puzzle | null }) {
               if (cell.kind === "covered") return null;
               if (cell.kind === "block") return <div key={key} className="cell cell-dark" style={{ gridRow: r + 1, gridColumn: c + 1 }} aria-label="Sort felt" />;
               if (cell.kind === "arrow") return <div key={key} className="cell cell-separator" style={{ gridRow: r + 1, gridColumn: c + 1 }} aria-label={cell.direction === "across" ? "Ordmellemrum, pil til højre" : "Ordmellemrum, pil ned"}>{cell.direction === "across" ? "→" : "↓"}</div>;
-              if (cell.kind === "image") return <div key={key} className="cell cell-image" style={{ gridRow: `${r + 1} / span ${cell.height}`, gridColumn: `${c + 1} / span ${cell.width}` }} aria-label="Billedfelt"><span aria-hidden="true">✦</span></div>;
+              if (cell.kind === "image") { const src = cell.illustration?.startsWith("data:") ? cell.illustration : cell.illustration?.startsWith("preset:") ? `/illustrations/${cell.illustration.slice(7)}.svg` : undefined; return <div key={key} className="cell cell-image" style={{ gridRow: `${r + 1} / span ${cell.height}`, gridColumn: `${c + 1} / span ${cell.width}` }} aria-label="Billedfelt">{src ? <img src={src} alt="" style={{ objectPosition: `${cell.offsetX ?? 50}% ${cell.offsetY ?? 50}%` }} /> : <span aria-hidden="true">✦</span>}{(cell.placementIds ?? []).map(id => { const placement = puzzle.placements[id]; if (!placement.imageMarker) return null; return <button key={id} className={`image-cue-button${selection?.placementId === id ? " clue-active" : ""}`} style={{ left: `${placement.imageMarker.left}%`, top: `${placement.imageMarker.top}%` }} onClick={() => selectPlacement(placement)} aria-label={`${placement.direction === "across" ? "Vandret" : "Lodret"} svar, ${placement.length} bogstaver`}>{placement.imageMarker.arrow}</button>; })}</div>; }
               if (cell.kind === "clue") {
                 const display = cluePresentation({ row: r, col: c, width: cell.width, height: cell.height }, cell.placementIds.map(id => puzzle.placements[id]));
                 return <div key={key} className={`cell cell-clue ${cell.placementIds.length > 1 ? "clue-double" : ""} ${display.horizontal ? "clue-horizontal" : ""}`} style={{ gridRow: `${r + 1} / span ${cell.height}`, gridColumn: `${c + 1} / span ${cell.width}` }}>
@@ -247,13 +243,14 @@ export function Player({ published }: { published: Puzzle | null }) {
             }))}
           </div></div><p className="scroll-hint">Skub til siden for at se hele feltet ↔</p>
 
-          <div className="active-clue"><div className="active-clue-icon">{selectedPlacement?.direction === "down" ? "↓" : "→"}</div><div><span>VALGT LEDTRÅD · {selectedPlacement?.direction === "down" ? "LODRET" : "VANDRET"}</span><strong>{selectedPlacement?.clue ?? "Vælg en ledetråd"}</strong></div><span className="clue-length">{selectedPlacement?.length ?? 0} BOGSTAVER</span></div>
-          <div className="puzzle-actions"><button onClick={checkAnswers}><Icon name="check" /> Tjek svar</button><button onClick={revealLetter}><Icon name="spark" /> Vis et bogstav</button><button onClick={() => { setAnswers({}); setChecked(false); setMessage("Feltet er ryddet."); }}><Icon name="reset" /> Start forfra</button></div>
+          <div className="active-clue"><div className="active-clue-icon">{selectedPlacement?.cueKind === "image" ? selectedPlacement.imageMarker?.arrow : selectedPlacement?.direction === "down" ? "↓" : "→"}</div><div><span>{selectedPlacement?.cueKind === "image" ? "BILLEDLEDTRÅD" : "VALGT LEDTRÅD"} · {selectedPlacement?.direction === "down" ? "LODRET" : "VANDRET"}</span><strong>{selectedPlacement?.cueKind === "image" ? "Se pilen på billedet" : selectedPlacement?.clue ?? "Vælg en ledetråd"}</strong></div><span className="clue-length">{selectedPlacement?.length ?? 0} BOGSTAVER</span></div>
+          {!preview && <><div className="puzzle-actions"><button onClick={checkAnswers}><Icon name="check" /> Tjek svar</button><button onClick={revealLetter}><Icon name="spark" /> Vis et bogstav</button><button onClick={() => { setAnswers({}); setChecked(false); setMessage("Feltet er ryddet."); }}><Icon name="reset" /> Start forfra</button></div>
           <div className="progress-row"><div><strong>{completed ? "Krydsordet er løst!" : "Din fremgang"}</strong><span>{filled} af {letterCells.length} bogstaver</span></div><span>{percent}%</span></div><div className="progress-track"><div style={{ width: `${percent}%` }} /></div>
           <p className="status-message" role="status">{message || "Tip: Klik på et krydsende bogstav for at skifte retning."}</p>
+          </>}
         </section>
       </main>
-      <section className="dictionary-section"><div className="dictionary-heading"><span className="dictionary-icon"><Icon name="book" size={21} /></span><div><h2>Flere ord at lege med</h2><p>Ordbogen indeholder {new Set(dictionary.map((entry) => entry.word)).size} danske ord med ledetråde, blandt andet fra <a href="https://wordnet.dk/dannet" target="_blank" rel="noreferrer">DanNet</a> (CC BY-SA 4.0). Tilføj dine egne for mere variation.</p></div></div><details><summary>Udvid ordbogen <span>＋</span></summary><div className="dictionary-content"><label htmlFor="dictionary-input">Ét ord og én ledetråd pr. linje, adskilt af semikolon</label><textarea id="dictionary-input" value={dictionaryText} onChange={(event) => setDictionaryText(event.target.value)} placeholder={'CYKEL;Køretøj med to hjul\nHAV;Stort saltvand'} rows={4} /><div className="dictionary-bottom"><button onClick={addEntries}>Gem ord</button><p>Gemt i denne browser · {customEntries.length} {customEntries.length === 1 ? "eget ord" : "egne ord"}</p></div><p role="status">{dictionaryMessage}</p></div></details></section>
+      {!preview && <section className="dictionary-section"><div className="dictionary-heading"><span className="dictionary-icon"><Icon name="book" size={21} /></span><div><h2>Flere ord at lege med</h2><p>Ordbogen indeholder {new Set(dictionary.map((entry) => entry.word)).size} danske ord med ledetråde, blandt andet fra <a href="https://wordnet.dk/dannet" target="_blank" rel="noreferrer">DanNet</a> (CC BY-SA 4.0). Tilføj dine egne for mere variation.</p></div></div><details><summary>Udvid ordbogen <span>＋</span></summary><div className="dictionary-content"><label htmlFor="dictionary-input">Ledetråd: svar|svar eller ord;ledetråd;ledetråd pr. linje</label><textarea id="dictionary-input" value={dictionaryText} onChange={(event) => setDictionaryText(event.target.value)} placeholder={'Pigenavn: Hanne|Sigrid\nCYKEL;Køretøj med to hjul'} rows={4} /><div className="dictionary-bottom"><button onClick={addEntries}>Gem ord</button><p>Gemt i denne browser · {customEntries.length} {customEntries.length === 1 ? "eget ord" : "egne ord"}</p></div><p role="status">{dictionaryMessage}</p></div></details></section>}
       <footer className="footer"><span>ORDVÆRK <span>✳</span> EN PAUSE MED MENING</span><span>GOD FORNØJELSE MED ORDENE</span></footer>
     </div></div>
   );

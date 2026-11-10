@@ -42,7 +42,7 @@ function layoutFromMask(mask: string[][]): GridLayout | null {
 
   const active = new Set(words.map(word => word.clueId));
   const clues: GridLayout["clues"] = [];
-  const images: GridLayout["images"] = [{ row: 0, col: 0, width: 1, height: 1 }];
+  const images: GridLayout["images"] = [{ id: "image-0-0", row: 0, col: 0, width: 1, height: 1 }];
   const used = new Set<string>(["0"]);
   const remap = new Map<string, string>();
   for (let row = 0; row < size; row++) for (let col = 0; col < size; col++) {
@@ -58,7 +58,7 @@ function layoutFromMask(mask: string[][]): GridLayout | null {
       clues.push({ id, row, col, width: 2, height: 1 }); remap.set(right, id); used.add(id); used.add(right);
     } else if (active.has(below) && !used.has(below)) {
       clues.push({ id, row, col, width: 1, height: 2 }); remap.set(below, id); used.add(id); used.add(below);
-    } else { images.push({ row, col, width: 1, height: 1 }); used.add(id); }
+    } else { images.push({ id: `image-${row}-${col}`, row, col, width: 1, height: 1 }); used.add(id); }
   }
   for (const word of words) word.clueId = remap.get(word.clueId) ?? word.clueId;
   return { width: size, height: size, clues, images, words };

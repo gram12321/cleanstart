@@ -1,12 +1,12 @@
 import { wordCells, type ClueArea, type GridLayout, type GridWord, type Point } from "./layout";
 
-export type LayoutTool = "letter" | "clue" | "wide" | "tall" | "block" | "arrow-across" | "arrow-down";
+export type LayoutTool = "letter" | "clue" | "wide" | "tall" | "block" | "image-area" | "arrow-across" | "arrow-down";
 const key = (row: number, col: number) => `${row},${col}`;
 
 /** Rebuild slots from the visible grid, including incomplete intermediate layouts. */
-export function editLayout(layout: GridLayout, point: Point, tool: LayoutTool): GridLayout | null {
-  const width = tool === "wide" ? 2 : 1;
-  const height = tool === "tall" ? 2 : 1;
+export function editLayout(layout: GridLayout, point: Point, tool: LayoutTool, areaSize?: { width: number; height: number }): GridLayout | null {
+  const width = areaSize?.width ?? (tool === "wide" ? 2 : 1);
+  const height = areaSize?.height ?? (tool === "tall" ? 2 : 1);
   if (!Number.isInteger(point.row) || !Number.isInteger(point.col) || point.row < 0 || point.col < 0 || point.col + width > layout.width || point.row + height > layout.height) return null;
   const changed = new Set<string>();
   for (let r = point.row; r < point.row + height; r++) for (let c = point.col; c < point.col + width; c++) changed.add(key(r, c));
@@ -26,12 +26,13 @@ export function editLayout(layout: GridLayout, point: Point, tool: LayoutTool): 
     const points: Point[] = [];
     for (let r = area.row; r < area.row + area.height; r++) for (let c = area.col; c < area.col + area.width; c++) points.push({ row: r, col: c });
     if (points.some(p => changed.has(key(p.row, p.col)))) {
-      for (const p of points) if (!changed.has(key(p.row, p.col))) images.push({ ...p, width: 1, height: 1 });
+      for (const p of points) if (!changed.has(key(p.row, p.col))) images.push({ ...p, id: `image-${p.row}-${p.col}`, width: 1, height: 1 });
     } else images.push(area);
   }
   for (const block of layout.blocks ?? []) blocks.set(key(block.row, block.col), block);
   for (const k of changed) { blocks.delete(k); arrows.delete(k); }
   if (tool === "clue" || tool === "wide" || tool === "tall") clues.push({ ...point, id: `clue-${point.row}-${point.col}`, width, height });
+  if (tool === "image-area") images.push({ ...point, id: `image-${point.row}-${point.col}`, width, height });
   if (tool === "block") blocks.set(key(point.row, point.col), point);
   if (tool === "arrow-across" || tool === "arrow-down") arrows.set(key(point.row, point.col), { ...point, direction: tool === "arrow-across" ? "across" : "down" });
 
@@ -55,7 +56,8 @@ export function editLayout(layout: GridLayout, point: Point, tool: LayoutTool): 
       if (length === 1 && !clueAt(row - dr, col - dc)) continue;
       const old = layout.words.find(word => word.direction === direction && word.start.row === row && word.start.col === col);
       const clue = clueAt(row - dr, col - dc);
-      words.push({ id: old?.id ?? `${direction}-${row}-${col}`, clueId: clue?.id ?? `missing-${direction}-${row}-${col}`, start: { row, col }, direction, length, ...(breaks.length ? { breaks } : {}) });
+      const retainedImageCue = old && images.find(area => area.id === old.clueId);
+      words.push({ id: old?.id ?? `${direction}-${row}-${col}`, clueId: retainedImageCue?.id ?? clue?.id ?? `missing-${direction}-${row}-${col}`, ...(old?.textClueId ? { textClueId: old.textClueId } : {}), start: { row, col }, direction, length, ...(breaks.length ? { breaks } : {}) });
     }
   }
   // A run without a clue is not an additional word when it crosses a clued word; any uncovered cells remain invalid.
@@ -64,8 +66,8 @@ export function editLayout(layout: GridLayout, point: Point, tool: LayoutTool): 
   return retainedWords;
   };
   let retainedWords = deriveWords();
-  if (tool === "block") {
-    // Repair unused clues connected to the edited cell, following the cascade.
+  if (tool === "block" || tool === "image-area") {
+    // Repair unused clues connected to the edited area, following the cascade.
     const repaired = new Set(changed);
     let removed: boolean;
     do {

@@ -3,9 +3,11 @@ import type { Direction } from "./generator";
 export interface Point { row: number; col: number }
 export interface Area extends Point { width: number; height: number }
 export interface ClueArea extends Area { id: string }
+export interface ImageArea extends Area { id: string; illustration?: string; offsetX?: number; offsetY?: number }
 export interface GridWord {
   id: string;
   clueId: string;
+  textClueId?: string;
   start: Point;
   direction: Direction;
   length: number;
@@ -16,7 +18,7 @@ export interface GridLayout {
   width: number;
   height: number;
   clues: ClueArea[];
-  images: Area[];
+  images: ImageArea[];
   words: GridWord[];
   blocks?: Point[];
   arrows?: ArrowCell[];
@@ -60,6 +62,43 @@ export function fitsBreaks(word: GridWord, answer: string): boolean {
   return JSON.stringify(word.breaks ?? []) === JSON.stringify(answerBreaks(answer));
 }
 
+export function imageCueMarker(area: Area, word: Pick<GridWord, "start" | "direction">): { left: number; top: number; arrow: string } {
+  if (word.direction === "across") {
+    const right = word.start.col >= area.col + area.width;
+    return { left: right ? 96 : 4, top: Math.max(6, Math.min(94, (word.start.row - area.row + 0.5) * 100 / area.height)), arrow: right ? "→" : "←" };
+  }
+  const below = word.start.row >= area.row + area.height;
+  return { left: Math.max(6, Math.min(94, (word.start.col - area.col + 0.5) * 100 / area.width)), top: below ? 94 : 6, arrow: below ? "↓" : "↑" };
+}
+
+export interface ImageCueTarget { word: GridWord; marker: { left: number; top: number; arrow: string } }
+/** Gives the nearest answer on each image-facing row or column an interactive cue marker. */
+export function imageCueTargets(area: Area, words: GridWord[]): ImageCueTarget[] {
+  const nearest = new Map<string, { word: GridWord; distance: number }>();
+  for (const word of words) {
+    const end = wordCells(word).at(-1)!;
+    let side: string;
+    let line: number;
+    let distance: number;
+    if (word.direction === "across") {
+      line = word.start.row;
+      if (line < area.row || line >= area.row + area.height) continue;
+      if (word.start.col >= area.col + area.width) { side = "right"; distance = word.start.col - (area.col + area.width); }
+      else if (end.col < area.col) { side = "left"; distance = area.col - end.col; }
+      else continue;
+    } else {
+      line = word.start.col;
+      if (line < area.col || line >= area.col + area.width) continue;
+      if (word.start.row >= area.row + area.height) { side = "bottom"; distance = word.start.row - (area.row + area.height); }
+      else if (end.row < area.row) { side = "top"; distance = area.row - end.row; }
+      else continue;
+    }
+    const key = `${word.direction}-${side}-${line}`;
+    if (!nearest.has(key) || nearest.get(key)!.distance > distance) nearest.set(key, { word, distance });
+  }
+  return [...nearest.values()].map(({ word }) => ({ word, marker: imageCueMarker(area, word) }));
+}
+
 export function layoutIssues(layout: GridLayout): LayoutIssue[] {
   const errors: LayoutIssue[] = [];
   const add = (message: string, cells: Point[] = []) => errors.push({ message, cells: cells.filter(inside) });
@@ -69,10 +108,10 @@ export function layoutIssues(layout: GridLayout): LayoutIssue[] {
   const inside = ({ row, col }: Point) => Number.isInteger(row) && Number.isInteger(col) && row >= 0 && col >= 0 && row < layout.height && col < layout.width;
   const clueIds = new Set<string>();
   for (const [index, area] of [...layout.clues, ...layout.images].entries()) {
-    const clue = index < layout.clues.length;
-    const id = clue ? layout.clues[index].id : `image-${index}`;
-    if (clue && (!id || clueIds.has(id))) add(`Duplicate or empty clue id: ${id}`, [area]);
-    if (clue) clueIds.add(id);
+    const isClue = index < layout.clues.length;
+    const id = isClue ? layout.clues[index].id : layout.images[index - layout.clues.length].id;
+    if (!id || clueIds.has(id)) add(`Duplicate or empty clue id: ${id}`, [area]);
+    clueIds.add(id);
     if (!Number.isInteger(area.width) || !Number.isInteger(area.height) || area.width < 1 || area.height < 1 || !inside(area) || !inside({ row: area.row + area.height - 1, col: area.col + area.width - 1 })) {
       add(`Invalid area: ${id}`, [area]); continue;
     }
@@ -93,7 +132,9 @@ export function layoutIssues(layout: GridLayout): LayoutIssue[] {
     if (!word.id || wordIds.has(word.id)) add(`Duplicate or empty word id: ${word.id}`, [word.start]);
     wordIds.add(word.id);
     const clue = layout.clues.find(item => item.id === word.clueId);
-    if (!clue) add(`Missing clue for ${word.id}`, wordCells(word));
+    const image = layout.images.find(item => item.id === word.clueId);
+    const cue = clue ?? image;
+    if (!cue) add(`Missing clue for ${word.id}`, wordCells(word));
     if (!Number.isInteger(word.length) || word.length < 1 || !inside(word.start) || (word.breaks ?? []).some((b, i, all) => !Number.isInteger(b) || b < 1 || b >= word.length || (i > 0 && b <= all[i - 1]))) { add(`Invalid word: ${word.id}`, [word.start]); continue; }
     // A straight or bent arrow connects the clue area to the first letter.
     if (clue) {
@@ -119,17 +160,6 @@ export function layoutIssues(layout: GridLayout): LayoutIssue[] {
     }
   }
   if (!layout.words.length) add("No words");
-  if (layout.words.length) {
-    const reached = new Set<GridWord>([layout.words[0]]);
-    let previous = -1;
-    while (previous !== reached.size) {
-      previous = reached.size;
-      for (const row of cells) for (const cell of row) {
-        if (cell.words.some(word => reached.has(word))) cell.words.forEach(word => reached.add(word));
-      }
-    }
-    if (reached.size !== layout.words.length) add("Words are not connected by crossings", layout.words.filter(word => !reached.has(word)).flatMap(wordCells));
-  }
   for (const clue of layout.clues) {
     const count = layout.words.filter(word => word.clueId === clue.id).length;
     if (count < 1 || count > 2) add(`Clue ${clue.id} must have one or two words`, Array.from({ length: clue.width * clue.height }, (_, i) => ({ row: clue.row + Math.floor(i / clue.width), col: clue.col + i % clue.width })));
