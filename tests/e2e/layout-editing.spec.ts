@@ -374,7 +374,7 @@ test("published shared clue arrows face outwards in square and wide clue areas",
   grid = editLayout(grid, { row: 5, col: 0 }, "wide")!;
   const answers = Object.fromEntries(grid.words.map((word, i) => [word.id, { word: "AB", clue: `LedetrÃ¥d ${i}`, length: 2, source: "custom" as const }]));
   const puzzle = puzzleFromLayout(grid, answers);
-  await page.addInitScript(saved => localStorage.setItem("ordvaerk-published-v1", JSON.stringify(saved)), puzzle);
+  await page.addInitScript(saved => localStorage.setItem("ordvaerk-library-v1", JSON.stringify([{ id: "test-puzzle", name: "Test", puzzle: saved }])), puzzle);
   await page.goto("/");
   for (const [row, col, horizontal] of [[1, 0, true], [5, 0, false]] as const) {
     const clue = page.locator(".cell-clue").filter({ has: page.getByRole("button", { name: new RegExp(`vandret.*rÃ¦kke ${row + 1}, kolonne ${col + (horizontal ? 2 : 3)}$`) }) });
@@ -417,7 +417,7 @@ test("player loads a published phrase and moves across its arrow", async ({ page
   grid = editLayout(grid, { row: 1, col: 3 }, "arrow-across")!;
   const entry: DictionaryEntry = { word: "AB CD", clue: "Et udtryk", length: 4, source: "custom" };
   const puzzle = puzzleFromLayout(grid, { [grid.words[0].id]: entry });
-  await page.addInitScript(saved => localStorage.setItem("ordvaerk-published-v1", JSON.stringify(saved)), puzzle);
+  await page.addInitScript(saved => localStorage.setItem("ordvaerk-library-v1", JSON.stringify([{ id: "test-puzzle", name: "Test", puzzle: saved }])), puzzle);
   await page.goto("/");
   await expect(page.getByLabel("Ordmellemrum, pil til hÃ¸jre")).toBeVisible();
   await page.locator(".player-page").getByLabel("RÃ¦kke 2, kolonne 2", { exact: true }).click();

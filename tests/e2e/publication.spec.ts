@@ -33,14 +33,14 @@ test("a completed designer grid can be published to the player", async ({ page }
 
 test("a published puzzle opens on the player page and can be checked", async ({ page }) => {
   const puzzle = generatePuzzle(9, dictionary);
-  await page.addInitScript(published => localStorage.setItem("ordvaerk-published-v1", JSON.stringify(published)), puzzle);
+  await page.addInitScript(published => localStorage.setItem("ordvaerk-library-v1", JSON.stringify([{ id: "test-puzzle", name: "Test", puzzle: published }])), puzzle);
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Åbn designerens krydsord" })).toBeVisible();
   await expect(page.getByRole("heading", { name: /Dit krydsord/ })).toBeVisible();
   await page.getByRole("button", { name: "Tjek svar" }).click();
   await expect(page.getByRole("status").filter({ hasText: /rigtigt indtil videre/ })).toBeVisible();
   await page.getByRole("button", { name: "Designerværksted" }).click();
-  await expect(page.getByRole("heading", { name: "Mulige ord" })).toBeVisible();
+  await expect(page.locator(".suggestion-panel")).toBeVisible();
   await page.getByRole("button", { name: "Løs krydsord" }).click();
   await expect(page.getByRole("button", { name: "Åbn designerens krydsord" })).toBeVisible();
 });
@@ -48,7 +48,7 @@ test("a published puzzle opens on the player page and can be checked", async ({ 
 
 test("preview shows an unfinished draft without changing the published puzzle", async ({ page }) => {
   const published = generatePuzzle(9, dictionary);
-  await page.addInitScript(puzzle => localStorage.setItem("ordvaerk-published-v1", JSON.stringify(puzzle)), published);
+  await page.addInitScript(puzzle => localStorage.setItem("ordvaerk-library-v1", JSON.stringify([{ id: "test-puzzle", name: "Test", puzzle: puzzle }])), published);
   await page.goto("/");
   await page.getByRole("button", { name: "Designerværksted" }).click();
   await page.getByLabel("Ledetråd til valgt ord").fill("Foreløbig ledetråd");
@@ -56,7 +56,7 @@ test("preview shows an unfinished draft without changing the published puzzle", 
   await expect(page.getByText("Forhåndsvisning af kladde")).toBeVisible();
   await expect(page.getByRole("button", { name: /Foreløbig ledetråd/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Tjek svar" })).toHaveCount(0);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("ordvaerk-published-v1")!))).toEqual(published);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("ordvaerk-library-v1")!)[0].puzzle)).toEqual(published);
   await page.getByRole("button", { name: "Tilbage til designeren" }).click();
   await expect(page.getByLabel("Ledetråd til valgt ord")).toHaveValue("Foreløbig ledetråd");
 });

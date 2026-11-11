@@ -28,7 +28,7 @@ function describeLayoutError(error: string, layout: GridLayout): string {
     if (word) {
       const location = `Ord fra række ${word.start.row + 1}, kolonne ${word.start.col + 1} (${word.direction === "across" ? "vandret" : "lodret"})`;
       if (error.startsWith("Missing clue")) return `${location} mangler et ledetrådsfelt.`;
-      if (error.startsWith("Invalid word")) return `${location} skal have mindst ?t bogstav.`;
+      if (error.startsWith("Invalid word")) return `${location} skal have mindst ét bogstav.`;
       if (error.startsWith("Clue cannot")) return `${location} skal have en fri pil fra ledetrådsfeltet.`;
       if (error.startsWith("Missing arrow")) return `${location} mangler en pil ved ordmellemrummet.`;
       return `${location} går uden for feltet.`;
@@ -52,32 +52,60 @@ function makeLayout(size: number): GridLayout {
   if (!layout) throw new Error("Kunne ikke oprette et felt");
   return layout;
 }
-const PUBLISHED_KEY = "ordvaerk-published-v1";
-function loadPublished(): Puzzle | null {
-  try { const saved = JSON.parse(localStorage.getItem(PUBLISHED_KEY) ?? "null"); return saved && Array.isArray(saved.cells) && Array.isArray(saved.placements) && typeof saved.size === "number" ? saved as Puzzle : null; } catch { return null; }
+type PublishedItem = { id: string; name: string; puzzle: Puzzle };
+type Draft = { id: string; name: string; size: number; layout: GridLayout; letters: Record<string, string>; clues: Record<string, string> };
+const LIBRARY_KEY = "ordvaerk-library-v1";
+const DRAFTS_KEY = "ordvaerk-drafts-v1";
+function loadList<T>(key: string): T[] {
+  try { const value = JSON.parse(localStorage.getItem(key) ?? "[]"); return Array.isArray(value) ? value : []; } catch { return []; }
+}
+function loadLibrary(): { items: PublishedItem[]; error: string } {
+  try {
+    const raw = localStorage.getItem(LIBRARY_KEY);
+    const saved: unknown = raw === null ? [] : JSON.parse(raw);
+    if (!Array.isArray(saved) || !saved.every(item => item && typeof item.id === "string" && typeof item.name === "string" && item.puzzle && Array.isArray(item.puzzle.cells) && Array.isArray(item.puzzle.placements))) throw new Error("Invalid library");
+    return { items: saved as PublishedItem[], error: "" };
+  } catch {
+    return { items: [], error: "Krydsordsbiblioteket kunne ikke indlæses eller gemmes. De eksisterende data er ikke ændret." };
+  }
 }
 export function App() {
   const [dictionaries, setDictionaries] = useState(loadCustomDictionaries);
-  const [storageError, setStorageError] = useState("");
+  const [initialLibrary] = useState(loadLibrary);
+  const [storageError, setStorageError] = useState(initialLibrary.error);
   function updateDictionaries(next: CustomDictionary[]) {
     try { saveCustomDictionaries(next); setDictionaries(next); setStorageError(""); }
     catch { setStorageError("Ordbøgerne kunne ikke gemmes i browseren."); }
   }
   const [page, setPage] = useState<"player" | "designer" | "preview">("player");
-  const [published, setPublished] = useState<Puzzle | null>(loadPublished);
+  const [justPublished, setJustPublished] = useState(false);
+  const [library, setLibrary] = useState<PublishedItem[]>(initialLibrary.items);
+  function publishPuzzle(puzzle: Puzzle, name: string) {
+    if (initialLibrary.error) throw new Error("Library unavailable");
+    const next = [...library, { id: crypto.randomUUID(), name, puzzle }];
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify(next));
+    setLibrary(next);
+    setJustPublished(true);
+  }
+  const published = library.at(-1)?.puzzle ?? null;
   const [preview, setPreview] = useState<Puzzle | null>(null);
-  return <><nav className="site-nav" aria-label="Vælg side"><button aria-current={page === "player" ? "page" : undefined} onClick={() => setPage("player")}>Løs krydsord</button><button aria-current={page === "designer" ? "page" : undefined} onClick={() => setPage("designer")}>Designerværksted</button></nav>{storageError && <p role="alert">{storageError}</p>}<div hidden={page !== "player"}>{page === "player" && <Player key={published ? JSON.stringify(published) : "demo"} published={published} dictionaries={dictionaries} onDictionariesChange={updateDictionaries} />}</div><div hidden={page !== "designer"}><Designer dictionaries={dictionaries} onDictionariesChange={updateDictionaries} onPublish={setPublished} onPreview={puzzle => { setPreview(puzzle); setPage("preview"); }} /></div>{page === "preview" && preview && <><div className="preview-notice"><strong>Forhåndsvisning af kladde</strong><span>Krydsordet er ikke udgivet. Her kan du se feltet og ledetrådene, som spilleren vil se dem.</span><button onClick={() => setPage("designer")}>Tilbage til designeren</button></div><Player published={preview} preview dictionaries={dictionaries} onDictionariesChange={updateDictionaries} /></>}</>;
+  return <><nav className="site-nav" aria-label="Vælg side"><button aria-current={page === "player" ? "page" : undefined} onClick={() => setPage("player")}>Løs krydsord</button><button aria-current={page === "designer" ? "page" : undefined} onClick={() => { setJustPublished(false); setPage("designer"); }}>Designerværksted</button></nav>{storageError && <p role="alert">{storageError}</p>}<div hidden={page !== "player"}>{page === "player" && <Player published={published} library={library} preferPublished={justPublished} dictionaries={dictionaries} onDictionariesChange={updateDictionaries} />}</div><div hidden={page !== "designer"}><Designer dictionaries={dictionaries} onDictionariesChange={updateDictionaries} onPublish={publishPuzzle} onPreview={puzzle => { setPreview(puzzle); setPage("preview"); }} /></div>{page === "preview" && preview && <><div className="preview-notice"><strong>Forhåndsvisning af kladde</strong><span>Krydsordet er ikke udgivet. Her kan du se feltet og ledetrådene, som spilleren vil se dem.</span><button onClick={() => setPage("designer")}>Tilbage til designeren</button></div><Player published={preview} preview dictionaries={dictionaries} onDictionariesChange={updateDictionaries} /></>}</>;
 }
-function Designer({ onPublish, onPreview, dictionaries, onDictionariesChange }: { onPublish: (puzzle: Puzzle) => void; onPreview: (puzzle: Puzzle) => void; dictionaries: CustomDictionary[]; onDictionariesChange: (next: CustomDictionary[]) => void }) {
+function Designer({ onPublish, onPreview, dictionaries, onDictionariesChange }: { onPublish: (puzzle: Puzzle, name: string) => void; onPreview: (puzzle: Puzzle) => void; dictionaries: CustomDictionary[]; onDictionariesChange: (next: CustomDictionary[]) => void }) {
   const entries = useMemo(() => [...dictionaries.filter(item => item.showSuggestions).flatMap(item => item.entries), ...dictionary], [dictionaries]);
   const autofillEntries = useMemo(() => [...dictionaries.filter(item => item.useAutofill).flatMap(item => item.entries), ...dictionary], [dictionaries]);
   const allEntries = useMemo(() => [...dictionaries.flatMap(item => item.entries), ...dictionary], [dictionaries]);
   const [dictionaryId, setDictionaryId] = useState(dictionaries[0]?.id ?? "");
+  const [designerTab, setDesignerTab] = useState<"workshop" | "dictionaries">("workshop");
   const currentDictionary = dictionaries.find(item => item.id === dictionaryId) ?? dictionaries[0];
   const [newName, setNewName] = useState("");
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  const [transferTargets, setTransferTargets] = useState<Record<string, string>>({});
   const wordScores = useMemo(() => indexWordScores(entries), [entries]);
+  const [drafts, setDrafts] = useState<Draft[]>(() => loadList<Draft>(DRAFTS_KEY).filter(item => item && typeof item.id === "string" && typeof item.name === "string" && item.layout && Array.isArray(item.layout.words) && Array.isArray(item.layout.images) && item.letters && item.clues));
+  const [draftId, setDraftId] = useState("");
+  const [designName, setDesignName] = useState("");
   const [size, setSize] = useState(9);
   const [layout, setLayout] = useState(() => makeLayout(9));
   const [selectedId, setSelectedId] = useState(layout.words[0]?.id);
@@ -190,7 +218,7 @@ function Designer({ onPublish, onPreview, dictionaries, onDictionariesChange }: 
     };
     worker.postMessage({ layout, entries: autofillEntries, letters, selected: id });
   }
-  function newLayout() { const next = makeLayout(size); setLayout(next); setSelectedId(next.words[0]?.id); setDirection(next.words[0]?.direction ?? "across"); setSelectedCell(null); setLetters({}); setClues({}); setPublishMessage(""); setLayoutMessage(""); }
+  function newLayout() { setDraftId(""); setDesignName(""); const next = makeLayout(size); setLayout(next); setSelectedId(next.words[0]?.id); setDirection(next.words[0]?.direction ?? "across"); setSelectedCell(null); setLetters({}); setClues({}); setPublishMessage(""); setLayoutMessage(""); }
   function chooseDirection(next: "across" | "down") {
     if (autofillWorker.current) cancelAutofill();
     setDirection(next);
@@ -348,6 +376,20 @@ function Designer({ onPublish, onPreview, dictionaries, onDictionariesChange }: 
     updateDictionary({ ...currentDictionary, entries: [...merged.values()] });
     setText(""); setMessage(`${parsed.length} ord er gemt.`);
   }
+  function transferEntry(entry: DictionaryEntry, targetId: string, move: boolean) {
+    if (!currentDictionary || !targetId || targetId === currentDictionary.id) return;
+    const target = dictionaries.find(item => item.id === targetId);
+    if (!target) return;
+    const key = customEntryKey(entry);
+    const targetEntries = new Map(target.entries.map(item => [customEntryKey(item), item]));
+    targetEntries.set(key, entry);
+    onDictionariesChange(dictionaries.map(item => {
+      if (item.id === target.id) return { ...item, entries: [...targetEntries.values()] };
+      if (move && item.id === currentDictionary.id) return { ...item, entries: item.entries.filter(sourceEntry => customEntryKey(sourceEntry) !== key) };
+      return item;
+    }));
+    setMessage(move ? `"${entry.word}" blev flyttet til ${target.name}.` : `"${entry.word}" blev kopieret til ${target.name}.`);
+  }
   function saveEdit(key: string) {
     if (!currentDictionary) return;
     const parsed = parseCustomEntries(editText);
@@ -368,6 +410,22 @@ function Designer({ onPublish, onPreview, dictionaries, onDictionariesChange }: 
     setPublishMessage("");
     onPreview(puzzleFromLayout(layout, answers));
   }
+  function saveDraft() {
+    const name = designName.trim();
+    if (!name) { setPublishMessage("Giv designet et navn før det gemmes."); return; }
+    const id = draftId || crypto.randomUUID();
+    const draft = { id, name, size: layout.width, layout, letters, clues };
+    const next = [...drafts.filter(item => item.id !== id), draft];
+    try { localStorage.setItem(DRAFTS_KEY, JSON.stringify(next)); setDrafts(next); setDraftId(id); setPublishMessage("Kladden er gemt i denne browser."); }
+    catch { setPublishMessage("Kladden kunne ikke gemmes i browseren. Kontrollér pladsen i browseren."); }
+  }
+  function openDraft(id: string) {
+    const draft = drafts.find(item => item.id === id);
+    if (!draft) return;
+    autofillWorker.current?.terminate(); autofillWorker.current = null;
+    setDraftId(id); setDesignName(draft.name); setSize(draft.size); setLayout(draft.layout); setLetters(draft.letters); setClues(draft.clues);
+    setSelectedId(draft.layout.words[0]?.id); setDirection(draft.layout.words[0]?.direction ?? "across"); setSelectedCell(null); setSelectedImageId(null); setTool("write"); setPublishMessage("Kladden er åbnet."); setLayoutMessage("");
+  }
   function publish() {
     if (layoutErrors.length || !layout.words.length) { setPublishMessage("Ret feltets opbygning før udgivelse."); return; }
     const answers: Record<string, DictionaryEntry> = {};
@@ -382,14 +440,23 @@ function Designer({ onPublish, onPreview, dictionaries, onDictionariesChange }: 
       answers[word.id] = { ...entry, clue: clues[word.id]?.trim() || entry.clue };
     }
     const puzzle = puzzleFromLayout(layout, answers);
-    try { localStorage.setItem(PUBLISHED_KEY, JSON.stringify(puzzle)); onPublish(puzzle); setPublishMessage("Krydsordet er udgivet på forsiden i denne browser."); }
+    try { onPublish(puzzle, designName.trim() || `Krydsord ${new Date().toLocaleString("da-DK")}`); setPublishMessage("Krydsordet er udgivet på forsiden i denne browser."); }
     catch { setPublishMessage("Krydsordet kunne ikke gemmes i browseren."); }
   }
   const pattern = selected ? wordCells(selected).map((cell, i) => `${selected.breaks?.includes(i) ? " " : ""}${letters[keyOf(cell.row, cell.col)] || "·"}`).join("") : "";
   return <div className="editor-shell">
     <header className="editor-header"><div className="brand">ordværk<span className="brand-dot">.</span></div><span>KRYDSORDSVÆRKSTED</span></header>
-    <main className="editor-main"><div className="editor-title"><div><p className="eyebrow">KONSTRUÉR ET KRYDSORD</p><h1>Find de rigtige <em>ord.</em></h1><p>Vælg et ord i feltet, og se hvilke muligheder der kan føre til en samlet løsning.</p></div><div className="layout-controls"><label htmlFor="size">Feltets størrelse</label><select id="size" value={size} onChange={event => setSize(Number(event.target.value))}><option value={9}>9 × 9</option><option value={11}>11 × 11</option><option value={13}>13 × 13</option></select><button onClick={newLayout}>Nyt tomt felt</button><button onClick={previewPuzzle}>Preview</button><button onClick={publish}>Udgiv krydsord</button><p role="status">{publishMessage}</p></div></div>
-    <div className="editor-workspace"><section className="editor-board-panel"><div className="panel-heading"><div><span>01 / FELT</span><h2>Dit krydsord</h2></div><div><button className="subtle" onClick={() => startAutofill()}>Fyld gitteret</button><button className="subtle" onClick={() => updateLetters({})}>Ryd alle bogstaver</button></div></div>
+    <main className="editor-main">
+      <div className="editor-title"><div><p className="eyebrow">{designerTab === "workshop" ? "KONSTRUÉR ET KRYDSORD" : "DIT PERSONLIGE ORDARKIV"}</p><h1>{designerTab === "workshop" ? <>Find de rigtige <em>ord.</em></> : <>Dine egne <em>ordbøger.</em></>}</h1><p>{designerTab === "workshop" ? "Vælg et ord i feltet, og se hvilke muligheder der kan føre til en samlet løsning." : "Saml og vedligehold dine egne ord og ledetråde."}</p></div></div>
+
+    <nav className="designer-tabs" aria-label="Designerens værktøjer"><button type="button" aria-current={designerTab === "workshop" ? "page" : undefined} onClick={() => setDesignerTab("workshop")}>Krydsord</button><button type="button" aria-current={designerTab === "dictionaries" ? "page" : undefined} onClick={() => setDesignerTab("dictionaries")}>Egne ordbøger <span>{dictionaries.length}</span></button></nav>
+          {designerTab === "workshop" && <section className="designer-control-bar" aria-label="Indstillinger for krydsord">
+        <div className="designer-control-group grid-setup"><span className="designer-control-label">GITTER</span><div className="designer-control-row"><label htmlFor="size">Feltets størrelse</label><select id="size" value={size} onChange={event => setSize(Number(event.target.value))}><option value={9}>9 × 9</option><option value={11}>11 × 11</option><option value={13}>13 × 13</option></select><button type="button" className="secondary-action" onClick={newLayout}>Nyt tomt felt</button></div></div>
+        <div className="designer-control-group draft-setup"><span className="designer-control-label">KLADDE</span><div className="designer-control-row"><input aria-label="Designets navn" value={designName} onChange={event => setDesignName(event.target.value)} placeholder="Navngiv designet" /><button type="button" className="secondary-action" onClick={saveDraft}>Gem kladde</button>{drafts.length > 0 && <select aria-label="Åbn gemt kladde" value={draftId} onChange={event => openDraft(event.target.value)}><option value="">Åbn gemt kladde</option>{drafts.map(draft => <option key={draft.id} value={draft.id}>{draft.name}</option>)}</select>}</div></div>
+        <div className="designer-control-group publish-setup"><span className="designer-control-label">KRYDSORD</span><div className="designer-control-row"><button type="button" className="secondary-action" onClick={previewPuzzle}>Forhåndsvis</button><button type="button" className="primary-action" onClick={publish}>Udgiv krydsord</button></div></div>
+        <p className="designer-control-status" role="status">{publishMessage}</p>
+      </section>}
+    {designerTab === "workshop" && <div className="editor-workspace"><section className="editor-board-panel"><div className="panel-heading"><div><span>01 / FELT</span><h2>Dit krydsord</h2></div><div><button className="subtle" onClick={() => startAutofill()}>Fyld gitteret</button><button className="subtle" onClick={() => updateLetters({})}>Ryd alle bogstaver</button></div></div>
     <div className="layout-tool"><span>Rediger feltet</span><div className="layout-tool-buttons" role="group" aria-label="Redigeringsværktøjer">{tools.map(item => <button key={item.id} type="button" aria-label={item.label} title={item.label} aria-pressed={tool === item.id} onClick={() => setTool(item.id)}><span aria-hidden="true" className={`tool-icon ${item.shape ?? ""}`}>{item.icon}</span></button>)}</div><span className="tool-name">{tools.find(item => item.id === tool)?.label}</span></div>
     <div className="direction-control" role="group" aria-label="Ordretning"><span>Ordretning</span><button type="button" aria-pressed={direction === "across"} onClick={() => chooseDirection("across")}>→ Vandret</button><button type="button" aria-pressed={direction === "down"} onClick={() => chooseDirection("down")}>↓ Lodret</button></div>
     {tool === "image-area" && <div className="image-choices"><label>Fyld billedområdet med<select aria-label="Vælg illustration" value={(selectedImage?.illustration ?? illustration).startsWith("data:") ? "upload" : (selectedImage?.illustration ?? illustration)} onChange={event => { if (event.target.value !== "upload") { setIllustration(event.target.value); updateSelectedImage({ illustration: event.target.value }); } }}><option value="preset:landscape">Landskab</option><option value="preset:flower">Blomst</option><option value="preset:house">Hus</option><option value="upload">Upload eget billede</option></select></label><input aria-label="Upload billede" type="file" accept="image/*" onChange={event => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { if (typeof reader.result === "string") { setIllustration(reader.result); updateSelectedImage({ illustration: reader.result }); } }; reader.readAsDataURL(file); }} /></div>}
@@ -467,14 +534,13 @@ function Designer({ onPublish, onPreview, dictionaries, onDictionariesChange }: 
       <div className={`suggestion-list${showEachWordOnce ? " unique-words" : ""}`}>{showEachWordOnce ? sortedSuggestions.map(({ entry, clues }) => <div className="suggestion-word" key={entry.word}><strong>{entry.word}</strong><small title="Ordets højeste kildescore">{wordScores.get(entry.word) ?? 0} point</small><div className="suggestion-clues">{clues.map(({ clue, score }) => <button key={clue} onClick={() => applyWord(entry.word, clue)}>{clue}<small title="Ledetrådens kildescore">{score} point</small><b>+</b></button>)}</div></div>) : sortedSuggestionClues.map(({ entry, clue, score }) => <button key={`${entry.word}:${clue}`} onClick={() => applyWord(entry.word, clue)}><strong>{entry.word}</strong><span>{clue}</span><small title="Ledetrådens kildescore">{score} point</small><b>+</b></button>)}</div>
       {progress.done && suggestions.length === 0 && <p className="empty">Ingen bekræftede muligheder. Prøv at ændre eller fjerne bogstaver.</p>}
       <button className="subtle clear-word" onClick={() => { const next = { ...letters }; wordCells(selected).forEach(cell => delete next[keyOf(cell.row, cell.col)]); updateLetters(next); }}>Ryd det valgte ord</button></> : <p>Vælg et ord i feltet.</p>}
-    </aside></div>
-    <details className="dictionary-editor"><summary>Udvid ordbogen · {dictionaries.reduce((sum, item) => sum + item.entries.length, 0)} egne ord</summary>
-      <div className="dictionary-controls"><label>Ny ordbog<input value={newName} onChange={event => setNewName(event.target.value)} placeholder="Ordbogens navn" /></label><button type="button" onClick={() => { const name = newName.trim(); if (!name) { setMessage("Skriv et navn til ordbogen."); return; } const item: CustomDictionary = { id: crypto.randomUUID(), name, entries: [], showSuggestions: true, useAutofill: true }; onDictionariesChange([...dictionaries, item]); setDictionaryId(item.id); setNewName(""); setEditingKey(null); }}>Opret ordbog</button></div>
-      {dictionaries.length > 0 && <label>Vælg ordbog <select value={currentDictionary?.id ?? ""} onChange={event => { setDictionaryId(event.target.value); setEditingKey(null); setMessage(""); }}>{dictionaries.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
-      {currentDictionary && <div className="dictionary-detail"><label>Ordbogens navn <input key={currentDictionary.id} defaultValue={currentDictionary.name} onBlur={event => { const name = event.target.value.trim(); if (name) updateDictionary({ ...currentDictionary, name }); else event.target.value = currentDictionary.name; }} /></label>
-      <button type="button" onClick={() => { if (window.confirm(`Slet ordbogen "${currentDictionary.name}" og alle dens ord?`)) { onDictionariesChange(dictionaries.filter(item => item.id !== currentDictionary.id)); setEditingKey(null); } }}>Slet ordbog</button>
-      <p>Skriv flere svar som Pigenavn: Hanne|Sigrid eller flere ledetråde som ORD;ledetråd;ledetråd. Ordene gemmes i denne browser.</p><textarea aria-label="Ord og ledetråde" value={text} onChange={event => setText(event.target.value)} placeholder={'Pigenavn: Hanne|Sigrid\nCYKEL;Køretøj med to hjul'} rows={4} /><button onClick={addWords}>Gem ord</button>
-      <h3>Gemte ord ({currentDictionary.entries.length})</h3><div className="custom-word-list">{currentDictionary.entries.map(entry => { const key = customEntryKey(entry); return <div className="custom-word-row" key={key}>{editingKey === key ? <><label>Ord og ledetråd <input value={editText} onChange={event => setEditText(event.target.value)} /></label><button type="button" onClick={() => saveEdit(key)}>Gem ændring</button><button type="button" onClick={() => setEditingKey(null)}>Annuller</button></> : <><span><strong>{entry.word}</strong> · {entry.clue}</span><button type="button" aria-label={`Rediger ${entry.word}: ${entry.clue}`} onClick={() => { setEditingKey(key); setEditText(`${entry.word};${entry.clue}`); }}>Rediger</button><button type="button" aria-label={`Fjern ${entry.word}: ${entry.clue}`} onClick={() => updateDictionary({ ...currentDictionary, entries: currentDictionary.entries.filter(item => customEntryKey(item) !== key) })}>Fjern</button></>}</div>; })}</div></div>}
-      <p role="status">{message}</p></details>
+    </aside></div>}
+    {designerTab === "dictionaries" && <section className="dictionary-manager" aria-label="Egne ordbøger">
+      <header className="dictionary-manager-header"><div><span className="eyebrow">DIT PERSONLIGE ORDARKIV</span><h2>Egne ordbøger</h2><p>Hold dine ord samlet i navngivne ordbøger. Vælg selv, hvilke der bidrager til forslag og autofyldning.</p></div><div className="dictionary-create"><label htmlFor="new-dictionary-name">Ny ordbog</label><div><input id="new-dictionary-name" value={newName} onChange={event => setNewName(event.target.value)} placeholder="Fx Steder eller Fagord" /><button type="button" onClick={() => { const name = newName.trim(); if (!name) { setMessage("Skriv et navn til ordbogen."); return; } const item: CustomDictionary = { id: crypto.randomUUID(), name, entries: [], showSuggestions: true, useAutofill: true }; onDictionariesChange([...dictionaries, item]); setDictionaryId(item.id); setNewName(""); setText(""); setMessage(""); }}>Opret ordbog</button></div></div></header>
+      <div className="dictionary-manager-body"><aside className="dictionary-list" aria-label="Dine ordbøger"><div className="dictionary-list-heading"><span>DINE ORDBØGER</span><strong>{dictionaries.length}</strong></div>{dictionaries.map(item => <button type="button" key={item.id} className={currentDictionary?.id === item.id ? "active" : ""} aria-current={currentDictionary?.id === item.id ? "true" : undefined} onClick={() => { setDictionaryId(item.id); setEditingKey(null); setText(""); setMessage(""); }}><span>{item.name}</span><small>{item.entries.length} ord</small></button>)}{dictionaries.length === 0 && <p>Opret din første ordbog ovenfor.</p>}</aside>
+      {currentDictionary ? <div className="dictionary-workspace"><div className="dictionary-workspace-top"><div><span className="eyebrow">VALGT ORDBOG</span><h3>{currentDictionary.name}</h3><p>{currentDictionary.entries.length} gemte ord og ledetråde</p></div><label className="dictionary-name-edit">Navn<input aria-label="Ordbogens navn" key={currentDictionary.id} defaultValue={currentDictionary.name} onBlur={event => { const name = event.target.value.trim(); if (name) updateDictionary({ ...currentDictionary, name }); else event.target.value = currentDictionary.name; }} onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label><button className="danger-button" type="button" onClick={() => { if (window.confirm(`Slet ordbogen "${currentDictionary.name}" og alle dens ord?`)) { const remaining = dictionaries.filter(item => item.id !== currentDictionary.id); onDictionariesChange(remaining); setDictionaryId(remaining[0]?.id ?? ""); setEditingKey(null); setText(""); setMessage(""); } }}>Slet ordbog</button></div>
+      <div className="dictionary-entry-add"><div><h4>Tilføj ord og ledetråde</h4><p>Et ord pr. linje: <code>ORD;ledetråd</code>. Flere ledetråde kan følge efter semikolon.</p></div><textarea aria-label="Ord og ledetråde" value={text} onChange={event => setText(event.target.value)} placeholder={'Pigenavn: Hanne|Sigrid\nCYKEL;Køretøj med to hjul'} rows={3} /><button type="button" onClick={addWords}>Tilføj ord</button></div>
+      <div className="dictionary-entries-heading"><div><h4>Ord i denne ordbog</h4><p>Redigér eller fjern enkelte poster efter behov.</p></div><span>{currentDictionary.entries.length}</span></div><div className="dictionary-entry-list">{currentDictionary.entries.map(entry => { const key = customEntryKey(entry); return <div className="dictionary-entry" key={key}>{editingKey === key ? <><input aria-label="Rediger ord og ledetråd" value={editText} onChange={event => setEditText(event.target.value)} onKeyDown={event => { if (event.key === "Enter") saveEdit(key); }} /><button type="button" onClick={() => saveEdit(key)}>Gem</button><button className="text-button" type="button" onClick={() => setEditingKey(null)}>Annuller</button></> : <><span><strong>{entry.word}</strong><span>{entry.clue}</span></span>{dictionaries.length > 1 && <div className="dictionary-entry-actions"><select aria-label={`Målordbog for ${entry.word}: ${entry.clue}`} value={transferTargets[key] ?? ""} onChange={event => setTransferTargets(current => ({ ...current, [key]: event.target.value }))}><option value="">Vælg ordbog</option>{dictionaries.filter(item => item.id !== currentDictionary.id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="text-button" type="button" disabled={!transferTargets[key]} onClick={() => transferEntry(entry, transferTargets[key], false)}>Kopiér</button><button className="text-button" type="button" disabled={!transferTargets[key]} onClick={() => transferEntry(entry, transferTargets[key], true)}>Flyt</button></div>}<button className="text-button" type="button" aria-label={`Rediger ${entry.word}: ${entry.clue}`} onClick={() => { setEditingKey(key); setEditText(`${entry.word};${entry.clue}`); }}>Rediger</button><button className="text-button remove" type="button" aria-label={`Fjern ${entry.word}: ${entry.clue}`} onClick={() => updateDictionary({ ...currentDictionary, entries: currentDictionary.entries.filter(item => customEntryKey(item) !== key) })}>Fjern</button></>}</div>; })}{currentDictionary.entries.length === 0 && <p className="dictionary-empty">Denne ordbog er tom endnu. Tilføj ord ovenfor.</p>}</div><p className="dictionary-message" role="status">{message}</p></div> : <div className="dictionary-no-selection"><h3>Ingen ordbøger endnu</h3><p>Opret en ordbog for at begynde at samle dine egne ord.</p></div>}</div>
+    </section>}
     </main><footer className="editor-footer">Ord fra den indbyggede ordbog og <a href="https://wordnet.dk/dannet">DanNet</a> · CC BY-SA 4.0. Automatiske ledetråde er ikke individuelt gennemgået.</footer></div>;
 }

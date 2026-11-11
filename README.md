@@ -8,7 +8,7 @@ Over feltet kan designeren vælge værktøjsikoner til bogstavfelter, sorte felt
 
 Et ordmellemrum med pil indsættes mellem bogstaverne i et svar og viser, at svaret består af flere ord, f.eks. `NEW → YORK`. Tilføj hele udtrykket som `NEW YORK;Amerikansk by` i ordbogen. Pilen tæller ikke som et bogstav, og spilleren springer den over. Ledetrådsfelter og pile bestemmes automatisk ud fra ordenes placering; bøjet pil til en frit valgt ledetråd kan ikke tilføjes manuelt.
 
-Når alle ord er udfyldt, kan designeren udgive krydsordet og bruge ordbogens ledetråde eller skrive sine egne. Det senest udgivne krydsord gemmes lokalt og åbnes på forsiden i samme browser; det deles ikke med andre enheder. Et nyt udgivet krydsord erstatter det forrige. Den ufærdige kladde gemmes ikke ved genindlæsning.
+Når alle ord er udfyldt, kan designeren udgive krydsordet og bruge ordbogens ledetråde eller skrive sine egne. Udgivne krydsord gemmes lokalt og kan vælges på forsiden i samme browser; de deles ikke med andre enheder. Spillerens fremgang gemmes automatisk. Designeren kan navngive og gemme flere ufærdige kladder og åbne dem igen senere. Udgivelse tilføjer en ny kopi til spillerens liste.
 
 Den indbyggede ordbog indeholder håndskrevne lister og ord fra DanNet. Automatiske ledetråde er ikke individuelt gennemgået. Tilføj egne ord under **Udvid ordbogen**, ét pr. linje som `ORD;ledetråd`; de gemmes i browseren.
 

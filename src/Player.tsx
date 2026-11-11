@@ -1,5 +1,5 @@
 import { customEntryKey, parseCustomEntries, type CustomDictionary } from "./crossword/customDictionary";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { dictionary } from "./crossword/dictionary";
 import { generatePuzzle, placementCells } from "./crossword/generator";
@@ -27,7 +27,13 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
 
-export function Player({ published, preview = false, dictionaries, onDictionariesChange }: { published: Puzzle | null; preview?: boolean; dictionaries: CustomDictionary[]; onDictionariesChange: (next: CustomDictionary[]) => void }) {
+type LibraryItem = { id: string; name: string; puzzle: Puzzle };
+type PlayState = { id: string; puzzle: Puzzle; answers: Answers };
+const PLAY_KEY = "ordvaerk-play-v1";
+function loadPlay(): { active?: PlayState; games: Record<string, PlayState> } {
+  try { const data = JSON.parse(localStorage.getItem(PLAY_KEY) ?? "null"); return data && data.games && typeof data.games === "object" ? data : { games: {} }; } catch { return { games: {} }; }
+}
+export function Player({ published, library = [], preview = false, preferPublished = false, dictionaries, onDictionariesChange }: { published: Puzzle | null; library?: LibraryItem[]; preview?: boolean; preferPublished?: boolean; dictionaries: CustomDictionary[]; onDictionariesChange: (next: CustomDictionary[]) => void }) {
   const customEntries = useMemo(() => dictionaries.filter(item => item.useAutofill).flatMap(item => item.entries), [dictionaries]);
   const [dictionaryId, setDictionaryId] = useState(dictionaries[0]?.id ?? "");
   const selectedDictionary = dictionaries.find(item => item.id === dictionaryId) ?? dictionaries[0];
@@ -36,9 +42,24 @@ export function Player({ published, preview = false, dictionaries, onDictionarie
     return [...dictionary.filter((entry) => !customWords.has(entry.word)), ...customEntries];
   }, [customEntries]);
   const [size, setSize] = useState(11);
-  const [puzzle, setPuzzle] = useState(() => published ?? generatePuzzle(11, allEntries));
+  const [savedPlay] = useState(() => preview ? { games: {} as Record<string, PlayState>, active: undefined as PlayState | undefined } : loadPlay());
+  const initial = !preview && !preferPublished && savedPlay.active?.puzzle?.cells && savedPlay.active?.puzzle?.placements ? savedPlay.active : null;
+  const [puzzleId, setPuzzleId] = useState(() => initial?.id ?? (library.at(-1)?.id || "generated"));
+  const [puzzle, setPuzzle] = useState(() => initial?.puzzle ?? published ?? generatePuzzle(11, allEntries));
   const [selection, setSelection] = useState<Selection | null>(() => initialSelection(puzzle));
-  const [answers, setAnswers] = useState<Answers>({});
+  const [answers, setAnswers] = useState<Answers>(() => initial?.answers ?? {});
+  const [playStorageError, setPlayStorageError] = useState("");
+  useEffect(() => {
+    if (preview) return;
+    try {
+      const data = loadPlay();
+      const current = { id: puzzleId, puzzle, answers };
+      data.active = current;
+      data.games[puzzleId] = current;
+      localStorage.setItem(PLAY_KEY, JSON.stringify(data));
+      setPlayStorageError("");
+    } catch { setPlayStorageError("Din fremgang kunne ikke gemmes i browseren."); }
+  }, [puzzleId, puzzle, answers, preview]);
   const [checked, setChecked] = useState(false);
   const [message, setMessage] = useState("");
   const [dictionaryText, setDictionaryText] = useState("");
@@ -114,6 +135,7 @@ export function Player({ published, preview = false, dictionaries, onDictionarie
       setMessage("Krydsordet kunne ikke udfyldes. Prøv igen.");
       return;
     }
+    setPuzzleId("generated");
     setPuzzle(next);
     setSelection(initialSelection(next));
     setAnswers({});
@@ -174,7 +196,7 @@ export function Player({ published, preview = false, dictionaries, onDictionarie
             <p className="intro-description">Tag en pause, find ordene, og lad bogstaverne falde på plads.</p>
           </div>
 
-          {published && <div className="settings-card"><div className="section-label"><span>01</span> FRA DESIGNEREN</div><p className="setting-caption">Et færdigt krydsord fra værkstedet er klar.</p><button className="primary-button" onClick={() => { setPuzzle(published); setSelection(initialSelection(published)); setAnswers({}); setChecked(false); setMessage("Designerens krydsord er klar."); }}>Åbn designerens krydsord <Icon name="arrow" /></button></div>}
+          {library.length > 0 && <div className="settings-card"><div className="section-label"><span>01</span> FRA DESIGNEREN</div><label htmlFor="published-choice">Vælg krydsord</label><select id="published-choice" value={library.some(item => item.id === puzzleId) ? puzzleId : ""} onChange={event => { const item = library.find(entry => entry.id === event.target.value); if (!item) return; const previous = loadPlay().games[item.id]; setPuzzleId(item.id); setPuzzle(item.puzzle); setAnswers(previous?.answers ?? {}); setSelection(initialSelection(item.puzzle)); setChecked(false); setMessage("Designerens krydsord er klar."); }}><option value="">Vælg krydsord</option>{library.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="primary-button" onClick={() => { const item = library.find(entry => entry.id === puzzleId) ?? library[library.length - 1]; const previous = loadPlay().games[item.id]; setPuzzleId(item.id); setPuzzle(item.puzzle); setAnswers(previous?.answers ?? {}); setSelection(initialSelection(item.puzzle)); setChecked(false); setMessage("Designerens krydsord er klar."); }}>Åbn designerens krydsord <Icon name="arrow" /></button></div>}
           <div className="settings-card">
             <div className="section-label"><span>01</span> PRØV ET TILFÆLDIGT KRYDSORD</div>
             <label htmlFor="grid-size">Størrelse på feltet</label>
@@ -187,7 +209,7 @@ export function Player({ published, preview = false, dictionaries, onDictionarie
           <div className="side-foot">LAVET MED <span>♥</span> OG GODE ORD</div>
         </section>}
 
-        <section className="puzzle-panel" aria-label="Krydsord">
+        <section className="puzzle-panel" aria-label="Krydsord">{playStorageError && <p role="alert">{playStorageError}</p>}
           <div className="puzzle-header"><div><div className="section-label"><span>02</span> TID TIL AT TÆNKE</div><h2>Dit krydsord <span>✳</span></h2></div><div className="puzzle-tag"><span /> KLAR TIL ORD</div></div>
           <div className="puzzle-meta"><span>{puzzle.size} × {puzzle.size} FELTER</span><span className="meta-separator" /> <span>{puzzle.placements.length} ORD</span><span className="meta-right">GOD FORNØJELSE!</span></div>
 
