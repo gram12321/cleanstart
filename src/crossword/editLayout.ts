@@ -76,7 +76,7 @@ export function editLayout(layout: GridLayout, point: Point, tool: LayoutTool, a
         const clue = clues[i];
         const touchesRepair = Array.from({ length: clue.width * clue.height }, (_, n) => ({ row: clue.row + Math.floor(n / clue.width), col: clue.col + n % clue.width })).some(cell =>
           [[0, 1], [0, -1], [1, 0], [-1, 0]].some(([dr, dc]) => repaired.has(key(cell.row + dr, cell.col + dc))));
-        if (!touchesRepair || retainedWords.some(word => word.clueId === clue.id)) continue;
+        if (!touchesRepair || retainedWords.some(word => word.clueId === clue.id || (word.textClueId === clue.id && images.some(image => image.id === word.clueId)))) continue;
         clues.splice(i, 1);
         for (let row = clue.row; row < clue.row + clue.height; row++) for (let col = clue.col; col < clue.col + clue.width; col++) { blocks.set(key(row, col), { row, col }); repaired.add(key(row, col)); }
         removed = true;
@@ -97,4 +97,20 @@ export function editLayout(layout: GridLayout, point: Point, tool: LayoutTool, a
 
 export function sameSlot(a: GridWord, b: GridWord): boolean {
   return a.direction === b.direction && a.clueId === b.clueId && JSON.stringify(wordCells(a)) === JSON.stringify(wordCells(b));
+}
+
+/** Resize from the existing top-left corner, leaving released cells as blocks. */
+export function resizeImageArea(layout: GridLayout, imageId: string, width: number, height: number): GridLayout | null {
+  const image = layout.images.find(item => item.id === imageId);
+  if (!image || !Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || image.col + width > layout.width || image.row + height > layout.height) return null;
+  if (layout.images.some(other => other.id !== imageId && image.row < other.row + other.height && image.row + height > other.row && image.col < other.col + other.width && image.col + width > other.col)) return null;
+  const released: Point[] = [];
+  for (let row = image.row; row < image.row + image.height; row++) for (let col = image.col; col < image.col + image.width; col++) {
+    if (row >= image.row + height || col >= image.col + width) released.push({ row, col });
+  }
+  const generatedId = `image-${image.row}-${image.col}`;
+  const base = { ...layout, images: layout.images.filter(item => item.id !== imageId), blocks: [...(layout.blocks ?? []), ...released], words: layout.words.map(word => word.clueId === imageId ? { ...word, clueId: generatedId } : word) };
+  const next = editLayout(base, image, "image-area", { width, height });
+  if (!next) return null;
+  return { ...next, images: next.images.map(item => item.id === generatedId ? { ...image, width, height } : item), words: next.words.map(word => word.clueId === generatedId ? { ...word, clueId: image.id } : word) };
 }

@@ -1,8 +1,8 @@
 ﻿import { expect, test } from "@playwright/test";
-import { editLayout } from "../../src/crossword/editLayout";
+import { editLayout, resizeImageArea } from "../../src/crossword/editLayout";
 import { fillLayout } from "../../src/crossword/fillLayout";
 import { puzzleFromLayout, placementCells } from "../../src/crossword/generator";
-import { cluePresentation, layoutIssues, validateLayout, wordCells, type GridLayout } from "../../src/crossword/layout";
+import { cluePresentation, imageCueTargets, layoutIssues, validateLayout, wordCells, type GridLayout } from "../../src/crossword/layout";
 import { dictionary, type DictionaryEntry } from "../../src/crossword/dictionary";
 import { shortClues } from "../../src/crossword/data/shortClues";
 import { createTemplateLayout } from "../../src/crossword/templateLayouts";
@@ -122,20 +122,86 @@ test("an image cue creates a selectable answer arrow on the image", () => {
   expect(puzzle.placements[0]).toMatchObject({ cueKind: "image", imageMarker: { arrow: "â†’" } });
 });
 
+test("image targets use the adjacent run instead of a word beyond another clue", () => {
+  const image = { id: "image", row: 0, col: 1, width: 1, height: 1 };
+  const grid: GridLayout = {
+    width: 3, height: 6, images: [image], blocks: [], arrows: [],
+    clues: [{ id: "lower", row: 3, col: 1, width: 1, height: 1 }],
+    words: [
+      { id: "lower-word", clueId: "lower", direction: "down", start: { row: 4, col: 1 }, length: 2 },
+      ...[1, 2].map(row => ({ id: `across-${row}`, clueId: `missing-${row}`, direction: "across" as const, start: { row, col: 0 }, length: 3 })),
+    ],
+  };
+  const target = imageCueTargets(image, grid).find(item => item.word.direction === "down")!;
+  expect(target.word).toMatchObject({ start: { row: 1, col: 1 }, length: 2 });
+  expect(target.word.id).not.toBe("lower-word");
+});
+
+test("resizing an image preserves its content and releases cells without splitting it", () => {
+  let grid = blank(5);
+  grid = editLayout(grid, { row: 0, col: 0 }, "image-area", { width: 2, height: 2 })!;
+  grid.images[0] = { ...grid.images[0], illustration: "preset:house", fit: "contain", offsetX: 25 };
+  grid = resizeImageArea(grid, grid.images[0].id, 3, 2)!;
+  expect(grid.images).toEqual([expect.objectContaining({ width: 3, height: 2, illustration: "preset:house", fit: "contain", offsetX: 25 })]);
+  grid = resizeImageArea(grid, grid.images[0].id, 1, 1)!;
+  expect(grid.images).toHaveLength(1);
+  expect(grid.blocks).toContainEqual({ row: 1, col: 2 });
+  expect(resizeImageArea(grid, grid.images[0].id, 6, 1)).toBeNull();
+});
+
+test("image controls select an existing box, resize it and fit the image", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Designerv/ }).click();
+  await page.getByRole("button", { name: /Billedomr/ }).click();
+  await page.getByRole("button", { name: "Rediger række 2, kolonne 1" }).click();
+  await page.getByRole("button", { name: /Billedomr/ }).click();
+  await page.getByRole("button", { name: "Rediger række 2, kolonne 1" }).click();
+  await expect(page.getByRole("group", { name: "Indstillinger for valgt billede" })).toBeVisible();
+  await page.getByRole("button", { name: "Forøg billedområdets bredde" }).click();
+  await expect(page.getByText("Bredde: 2", { exact: true })).toBeVisible();
+  await page.getByLabel("Billedtilpasning").selectOption("contain");
+  await page.getByRole("button", { name: "Bogstavfelt / vælg ord" }).click();
+  const image = page.locator(".editor-image img[src$='landscape.svg']");
+  await expect(image).toHaveCSS("object-fit", "contain");
+  await expect(image.locator("..")).toHaveCSS("grid-column-end", "span 2");
+  const box = (await image.boundingBox())!;
+  await page.mouse.move(box.x + 32, box.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 40, box.y + 20);
+  await page.mouse.up();
+  await expect(image).not.toHaveCSS("object-position", "50% 50%");
+});
+
 test("designer links a word to an image cue and player selects its arrow", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: /Designerv/ }).click();
   await page.getByRole("button", { name: /Billedomr/ }).click();
-  const board = await page.locator(".editor-board").boundingBox();
-  if (!board) throw new Error("Editor board was not visible");
-  await page.mouse.click(board.x + 24, board.y + 72);
+  await page.getByRole("button", { name: "Rediger række 2, kolonne 1" }).click();
   const target = page.locator(".editor-image .image-cue-target").first();
   await expect(target).toBeVisible();
+  const darkCells = await page.locator(".editor-board .editor-dark").count();
+  const clueCells = await page.locator(".editor-board .editor-clue").count();
   await target.click();
   await expect(page.locator(".editor-image .image-cue-target.active")).toHaveCount(1);
+  await expect(page.locator(".editor-board .editor-dark")).toHaveCount(darkCells);
+  await expect(page.locator(".editor-board .editor-clue")).toHaveCount(clueCells);
+  await target.click();
+  await expect(page.locator(".editor-image .image-cue-target.active")).toHaveCount(0);
+  await expect(page.locator(".editor-board .editor-dark")).toHaveCount(darkCells);
+  await target.click();
   await page.getByRole("button", { name: "Preview" }).click();
   const arrow = page.locator(".player-page .image-cue-button");
   await expect(arrow).toHaveCount(1);
+  const imageBox = await page.locator(".player-page .cell-image").filter({ has: page.locator(".image-cue-button") }).boundingBox();
+  const arrowBox = await arrow.boundingBox();
+  expect(imageBox).not.toBeNull();
+  expect(arrowBox).not.toBeNull();
+  expect(arrowBox!.x).toBeGreaterThanOrEqual(imageBox!.x);
+  expect(arrowBox!.y).toBeGreaterThanOrEqual(imageBox!.y);
+  expect(arrowBox!.x + arrowBox!.width).toBeLessThanOrEqual(imageBox!.x + imageBox!.width + 1);
+  expect(arrowBox!.y + arrowBox!.height).toBeLessThanOrEqual(imageBox!.y + imageBox!.height + 1);
+  if ((await arrow.textContent()) === "→") expect(imageBox!.x + imageBox!.width - (arrowBox!.x + arrowBox!.width)).toBeLessThan(2);
+  else expect(imageBox!.y + imageBox!.height - (arrowBox!.y + arrowBox!.height)).toBeLessThan(2);
   await arrow.click();
   await expect(page.locator(".active-clue")).toContainText("BILLEDLEDTR");
 });

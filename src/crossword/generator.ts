@@ -18,7 +18,7 @@ export interface Placement extends DictionaryEntry {
 }
 export interface LetterCell { kind: "letter"; solution: string; placementIds: number[] }
 export interface ClueCell { kind: "clue"; placementIds: number[]; width: number; height: number }
-export interface ImageCell { kind: "image"; width: number; height: number; illustration?: string; offsetX?: number; offsetY?: number; placementIds: number[] }
+export interface ImageCell { kind: "image"; width: number; height: number; illustration?: string; offsetX?: number; offsetY?: number; fit?: "cover" | "contain"; placementIds: number[] }
 export interface CoveredCell { kind: "covered" }
 export interface BlockCell { kind: "block" }
 export interface ArrowCell { kind: "arrow"; direction: Direction }
@@ -49,7 +49,7 @@ export function puzzleFromLayout(layout: GridLayout, answers: Record<string, Dic
   }
   for (const image of layout.images) {
     for (let r = image.row; r < image.row + image.height; r++) for (let c = image.col; c < image.col + image.width; c++) cells[r][c] = { kind: "covered" };
-    cells[image.row][image.col] = { kind: "image", width: image.width, height: image.height, illustration: image.illustration, offsetX: image.offsetX, offsetY: image.offsetY, placementIds: [] };
+    cells[image.row][image.col] = { kind: "image", width: image.width, height: image.height, illustration: image.illustration, offsetX: image.offsetX, offsetY: image.offsetY, fit: image.fit, placementIds: [] };
   }
   const placements: Placement[] = layout.words.map((word, id) => {
     const clue = layout!.clues.find(item => item.id === word.clueId);

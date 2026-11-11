@@ -24,3 +24,31 @@ export function parseCustomEntries(text: string): DictionaryEntry[] | null {
 export function customEntryKey(entry: DictionaryEntry): string {
   return `${entry.word}\u0000${entry.clue.toLocaleLowerCase("da-DK")}`;
 }
+
+export interface CustomDictionary {
+  id: string;
+  name: string;
+  showSuggestions: boolean;
+  useAutofill: boolean;
+  entries: DictionaryEntry[];
+}
+
+const STORAGE_KEY = "ordvaerk-ordboger-v1";
+export function loadCustomDictionaries(): CustomDictionary[] {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
+    if (Array.isArray(saved)) return saved.filter(item => item && typeof item.id === "string" && typeof item.name === "string" && Array.isArray(item.entries)).map(item => ({
+      id: item.id, name: item.name, showSuggestions: item.showSuggestions !== false, useAutofill: item.useAutofill !== false,
+      entries: validEntries(item.entries),
+    }));
+    const legacy: unknown = JSON.parse(localStorage.getItem("ordvaerk-ordbog") ?? "[]");
+    return [{ id: "default", name: "Egen ordbog", showSuggestions: true, useAutofill: true, entries: validEntries(legacy) }];
+  } catch { return [{ id: "default", name: "Egen ordbog", showSuggestions: true, useAutofill: true, entries: [] }]; }
+}
+function validEntries(value: unknown): DictionaryEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(entry => typeof entry?.word === "string" && /^[A-ZÆØÅ]+(?: [A-ZÆØÅ]+)*$/.test(entry.word) && typeof entry.clue === "string" && entry.clue.trim()).map(entry => ({ ...entry, length: answerLetters(entry.word).length, source: "custom" as const }));
+}
+export function saveCustomDictionaries(dictionaries: CustomDictionary[]): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(dictionaries));
+}

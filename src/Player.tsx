@@ -1,8 +1,7 @@
-import { customEntryKey, parseCustomEntries } from "./crossword/customDictionary";
+import { customEntryKey, parseCustomEntries, type CustomDictionary } from "./crossword/customDictionary";
 import { useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { dictionary } from "./crossword/dictionary";
-import type { DictionaryEntry } from "./crossword/dictionary";
 import { generatePuzzle, placementCells } from "./crossword/generator";
 import { cluePresentation } from "./crossword/layout";
 import type { Direction, Placement, Puzzle } from "./crossword/generator";
@@ -28,24 +27,10 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
 
-function getStoredEntries(): DictionaryEntry[] {
-  try {
-    const stored: unknown = JSON.parse(localStorage.getItem("ordvaerk-ordbog") ?? "[]");
-    if (!Array.isArray(stored)) return [];
-    return stored.filter((entry) => typeof entry?.word === "string" && /^[A-ZÆØÅ]+(?: [A-ZÆØÅ]+)*$/.test(entry.word) && entry.word.replaceAll(" ", "").length >= 1 && typeof entry.clue === "string" && entry.clue.length > 0)
-      .map((entry) => ({
-        word: entry.word,
-        clue: entry.clue,
-        length: entry.word.replaceAll(" ", "").length,
-        source: "custom" as const,
-        ...(typeof entry.clueGroupId === "string" ? { clueGroupId: entry.clueGroupId } : {}),
-        ...(typeof entry.partOfSpeech === "string" ? { partOfSpeech: entry.partOfSpeech } : {}),
-      }));
-  } catch { return []; }
-}
-
-export function Player({ published, preview = false }: { published: Puzzle | null; preview?: boolean }) {
-  const [customEntries, setCustomEntries] = useState<DictionaryEntry[]>(getStoredEntries);
+export function Player({ published, preview = false, dictionaries, onDictionariesChange }: { published: Puzzle | null; preview?: boolean; dictionaries: CustomDictionary[]; onDictionariesChange: (next: CustomDictionary[]) => void }) {
+  const customEntries = useMemo(() => dictionaries.filter(item => item.useAutofill).flatMap(item => item.entries), [dictionaries]);
+  const [dictionaryId, setDictionaryId] = useState(dictionaries[0]?.id ?? "");
+  const selectedDictionary = dictionaries.find(item => item.id === dictionaryId) ?? dictionaries[0];
   const allEntries = useMemo(() => {
     const customWords = new Set(customEntries.map((entry) => entry.word));
     return [...dictionary.filter((entry) => !customWords.has(entry.word)), ...customEntries];
@@ -165,14 +150,10 @@ export function Player({ published, preview = false }: { published: Puzzle | nul
       setDictionaryMessage("Skriv f.eks. Pigenavn: Hanne|Sigrid eller ORD;ledetråd.");
       return;
     }
-    const merged = new Map(getStoredEntries().map((entry) => [customEntryKey(entry), entry]));
+    if (!selectedDictionary) { setDictionaryMessage("Opret først en ordbog i designerværkstedet."); return; }
+    const merged = new Map(selectedDictionary.entries.map((entry) => [customEntryKey(entry), entry]));
     parsed.forEach((entry) => merged.set(customEntryKey(entry), entry));
-    const next = [...merged.values()];
-    try { localStorage.setItem("ordvaerk-ordbog", JSON.stringify(next)); } catch {
-      setDictionaryMessage("Ordene kunne ikke gemmes i browseren.");
-      return;
-    }
-    setCustomEntries(next);
+    onDictionariesChange(dictionaries.map(item => item.id === selectedDictionary.id ? { ...item, entries: [...merged.values()] } : item));
     setDictionaryText("");
     setDictionaryMessage(`${parsed.length} ord er tilføjet. Lav et nyt krydsord for at bruge dem.`);
   }
@@ -216,7 +197,7 @@ export function Player({ published, preview = false }: { published: Puzzle | nul
               if (cell.kind === "covered") return null;
               if (cell.kind === "block") return <div key={key} className="cell cell-dark" style={{ gridRow: r + 1, gridColumn: c + 1 }} aria-label="Sort felt" />;
               if (cell.kind === "arrow") return <div key={key} className="cell cell-separator" style={{ gridRow: r + 1, gridColumn: c + 1 }} aria-label={cell.direction === "across" ? "Ordmellemrum, pil til højre" : "Ordmellemrum, pil ned"}>{cell.direction === "across" ? "→" : "↓"}</div>;
-              if (cell.kind === "image") { const src = cell.illustration?.startsWith("data:") ? cell.illustration : cell.illustration?.startsWith("preset:") ? `/illustrations/${cell.illustration.slice(7)}.svg` : undefined; return <div key={key} className="cell cell-image" style={{ gridRow: `${r + 1} / span ${cell.height}`, gridColumn: `${c + 1} / span ${cell.width}` }} aria-label="Billedfelt">{src ? <img src={src} alt="" style={{ objectPosition: `${cell.offsetX ?? 50}% ${cell.offsetY ?? 50}%` }} /> : <span aria-hidden="true">✦</span>}{(cell.placementIds ?? []).map(id => { const placement = puzzle.placements[id]; if (!placement.imageMarker) return null; return <button key={id} className={`image-cue-button${selection?.placementId === id ? " clue-active" : ""}`} style={{ left: `${placement.imageMarker.left}%`, top: `${placement.imageMarker.top}%` }} onClick={() => selectPlacement(placement)} aria-label={`${placement.direction === "across" ? "Vandret" : "Lodret"} svar, ${placement.length} bogstaver`}>{placement.imageMarker.arrow}</button>; })}</div>; }
+              if (cell.kind === "image") { const src = cell.illustration?.startsWith("data:") ? cell.illustration : cell.illustration?.startsWith("preset:") ? `/illustrations/${cell.illustration.slice(7)}.svg` : undefined; return <div key={key} className="cell cell-image" style={{ gridRow: `${r + 1} / span ${cell.height}`, gridColumn: `${c + 1} / span ${cell.width}` }} aria-label="Billedfelt">{src ? <img src={src} alt="" style={{ objectFit: cell.fit ?? "cover", objectPosition: `${cell.offsetX ?? 50}% ${cell.offsetY ?? 50}%` }} /> : <span aria-hidden="true">✦</span>}{(cell.placementIds ?? []).map(id => { const placement = puzzle.placements[id]; if (!placement.imageMarker) return null; return <button key={id} className={`image-cue-button${selection?.placementId === id ? " clue-active" : ""}`} style={{ left: `clamp(13px, ${placement.imageMarker.left}%, calc(100% - 13px))`, top: `clamp(13px, ${placement.imageMarker.top}%, calc(100% - 13px))` }} onClick={() => selectPlacement(placement)} aria-label={`${placement.direction === "across" ? "Vandret" : "Lodret"} svar, ${placement.length} bogstaver`}>{placement.imageMarker.arrow}</button>; })}</div>; }
               if (cell.kind === "clue") {
                 const display = cluePresentation({ row: r, col: c, width: cell.width, height: cell.height }, cell.placementIds.map(id => puzzle.placements[id]));
                 return <div key={key} className={`cell cell-clue ${cell.placementIds.length > 1 ? "clue-double" : ""} ${display.horizontal ? "clue-horizontal" : ""}`} style={{ gridRow: `${r + 1} / span ${cell.height}`, gridColumn: `${c + 1} / span ${cell.width}` }}>
@@ -250,7 +231,7 @@ export function Player({ published, preview = false }: { published: Puzzle | nul
           </>}
         </section>
       </main>
-      {!preview && <section className="dictionary-section"><div className="dictionary-heading"><span className="dictionary-icon"><Icon name="book" size={21} /></span><div><h2>Flere ord at lege med</h2><p>Ordbogen indeholder {new Set(dictionary.map((entry) => entry.word)).size} danske ord med ledetråde, blandt andet fra <a href="https://wordnet.dk/dannet" target="_blank" rel="noreferrer">DanNet</a> (CC BY-SA 4.0). Tilføj dine egne for mere variation.</p></div></div><details><summary>Udvid ordbogen <span>＋</span></summary><div className="dictionary-content"><label htmlFor="dictionary-input">Ledetråd: svar|svar eller ord;ledetråd;ledetråd pr. linje</label><textarea id="dictionary-input" value={dictionaryText} onChange={(event) => setDictionaryText(event.target.value)} placeholder={'Pigenavn: Hanne|Sigrid\nCYKEL;Køretøj med to hjul'} rows={4} /><div className="dictionary-bottom"><button onClick={addEntries}>Gem ord</button><p>Gemt i denne browser · {customEntries.length} {customEntries.length === 1 ? "eget ord" : "egne ord"}</p></div><p role="status">{dictionaryMessage}</p></div></details></section>}
+      {!preview && <section className="dictionary-section"><div className="dictionary-heading"><span className="dictionary-icon"><Icon name="book" size={21} /></span><div><h2>Flere ord at lege med</h2><p>Ordbogen indeholder {new Set(dictionary.map((entry) => entry.word)).size} danske ord med ledetråde, blandt andet fra <a href="https://wordnet.dk/dannet" target="_blank" rel="noreferrer">DanNet</a> (CC BY-SA 4.0). Tilføj dine egne for mere variation.</p></div></div><details><summary>Udvid ordbogen <span>＋</span></summary><div className="dictionary-content"><label>Ordbog <select value={selectedDictionary?.id ?? ""} onChange={event => setDictionaryId(event.target.value)}>{dictionaries.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label htmlFor="dictionary-input">Ledetråd: svar|svar eller ord;ledetråd;ledetråd pr. linje</label><textarea id="dictionary-input" value={dictionaryText} onChange={(event) => setDictionaryText(event.target.value)} placeholder={'Pigenavn: Hanne|Sigrid\nCYKEL;Køretøj med to hjul'} rows={4} /><div className="dictionary-bottom"><button onClick={addEntries}>Gem ord</button><p>Gemt i denne browser · {customEntries.length} {customEntries.length === 1 ? "eget ord" : "egne ord"}</p></div><p role="status">{dictionaryMessage}</p></div></details></section>}
       <footer className="footer"><span>ORDVÆRK <span>✳</span> EN PAUSE MED MENING</span><span>GOD FORNØJELSE MED ORDENE</span></footer>
     </div></div>
   );

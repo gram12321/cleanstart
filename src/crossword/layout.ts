@@ -3,7 +3,7 @@ import type { Direction } from "./generator";
 export interface Point { row: number; col: number }
 export interface Area extends Point { width: number; height: number }
 export interface ClueArea extends Area { id: string }
-export interface ImageArea extends Area { id: string; illustration?: string; offsetX?: number; offsetY?: number }
+export interface ImageArea extends Area { id: string; illustration?: string; offsetX?: number; offsetY?: number; fit?: "cover" | "contain" }
 export interface GridWord {
   id: string;
   clueId: string;
@@ -72,31 +72,34 @@ export function imageCueMarker(area: Area, word: Pick<GridWord, "start" | "direc
 }
 
 export interface ImageCueTarget { word: GridWord; marker: { left: number; top: number; arrow: string } }
-/** Gives the nearest answer on each image-facing row or column an interactive cue marker. */
-export function imageCueTargets(area: Area, words: GridWord[]): ImageCueTarget[] {
-  const nearest = new Map<string, { word: GridWord; distance: number }>();
-  for (const word of words) {
-    const end = wordCells(word).at(-1)!;
-    let side: string;
-    let line: number;
-    let distance: number;
-    if (word.direction === "across") {
-      line = word.start.row;
-      if (line < area.row || line >= area.row + area.height) continue;
-      if (word.start.col >= area.col + area.width) { side = "right"; distance = word.start.col - (area.col + area.width); }
-      else if (end.col < area.col) { side = "left"; distance = area.col - end.col; }
-      else continue;
-    } else {
-      line = word.start.col;
-      if (line < area.col || line >= area.col + area.width) continue;
-      if (word.start.row >= area.row + area.height) { side = "bottom"; distance = word.start.row - (area.row + area.height); }
-      else if (end.row < area.row) { side = "top"; distance = area.row - end.row; }
-      else continue;
+/** Targets runs that start immediately at the image, including runs not yet clued. */
+export function imageCueTargets(area: Area, layout: GridLayout): ImageCueTarget[] {
+  const targets: ImageCueTarget[] = [];
+  const isLetter = (row: number, col: number) => row >= 0 && col >= 0 && row < layout.height && col < layout.width
+    && ![...layout.clues, ...layout.images].some(item => row >= item.row && row < item.row + item.height && col >= item.col && col < item.col + item.width)
+    && !(layout.blocks ?? []).some(item => item.row === row && item.col === col)
+    && !(layout.arrows ?? []).some(item => item.row === row && item.col === col);
+  for (const direction of ["across", "down"] as const) {
+    const count = direction === "across" ? area.height : area.width;
+    for (let i = 0; i < count; i++) {
+      const row = direction === "across" ? area.row + i : area.row + area.height;
+      const col = direction === "across" ? area.col + area.width : area.col + i;
+      if (!isLetter(row, col)) continue;
+      const existing = layout.words.find(word => word.direction === direction && word.start.row === row && word.start.col === col);
+      let r = row, c = col, length = 0;
+      const breaks: number[] = [];
+      const dr = direction === "down" ? 1 : 0, dc = direction === "across" ? 1 : 0;
+      while (isLetter(r, c)) {
+        length++; r += dr; c += dc;
+        if ((layout.arrows ?? []).some(arrow => arrow.row === r && arrow.col === c && arrow.direction === direction) && isLetter(r + dr, c + dc)) {
+          breaks.push(length); r += dr; c += dc;
+        }
+      }
+      const word: GridWord = existing ?? { id: `${direction}-${row}-${col}`, clueId: `missing-${direction}-${row}-${col}`, start: { row, col }, direction, length, ...(breaks.length ? { breaks } : {}) };
+      targets.push({ word, marker: imageCueMarker(area, word) });
     }
-    const key = `${word.direction}-${side}-${line}`;
-    if (!nearest.has(key) || nearest.get(key)!.distance > distance) nearest.set(key, { word, distance });
   }
-  return [...nearest.values()].map(({ word }) => ({ word, marker: imageCueMarker(area, word) }));
+  return targets;
 }
 
 export function layoutIssues(layout: GridLayout): LayoutIssue[] {
@@ -162,7 +165,8 @@ export function layoutIssues(layout: GridLayout): LayoutIssue[] {
   if (!layout.words.length) add("No words");
   for (const clue of layout.clues) {
     const count = layout.words.filter(word => word.clueId === clue.id).length;
-    if (count < 1 || count > 2) add(`Clue ${clue.id} must have one or two words`, Array.from({ length: clue.width * clue.height }, (_, i) => ({ row: clue.row + Math.floor(i / clue.width), col: clue.col + i % clue.width })));
+    const reserved = layout.words.some(word => word.textClueId === clue.id && layout.images.some(image => image.id === word.clueId));
+    if ((!count && !reserved) || count > 2) add(`Clue ${clue.id} must have one or two words`, Array.from({ length: clue.width * clue.height }, (_, i) => ({ row: clue.row + Math.floor(i / clue.width), col: clue.col + i % clue.width })));
   }
   for (const arrow of layout.arrows ?? []) {
     if (!layout.words.some(word => word.direction === arrow.direction && (word.breaks ?? []).some(b => {

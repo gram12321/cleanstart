@@ -9,7 +9,7 @@
 .player-page .cell-dark{background:#344a3c}.player-page .cell-separator{display:grid;place-items:center;background:#e2e9dd;color:#52765a;font-size:20px}
 
 .player-page .cell-clue button{padding:2px 3px 14px}.player-page .clue-double button{padding:1px 2px 10px}.player-page .clue-double b{font-size:10px;line-height:1}
-.player-page .cell-image{display:grid;place-items:center;overflow:hidden;background:radial-gradient(circle at 28% 24%,#faf5df 0 14%,transparent 15%),linear-gradient(145deg,#d8e5cb,#a8c3a1 52%,#728f78);color:#fff8dc}.player-page .cell-image span{font-size:clamp(22px,3vw,42px);text-shadow:0 1px 5px #45614c88}
+.player-page .cell-image{position:relative;display:grid;place-items:center;overflow:hidden;background:radial-gradient(circle at 28% 24%,#faf5df 0 14%,transparent 15%),linear-gradient(145deg,#d8e5cb,#a8c3a1 52%,#728f78);color:#fff8dc}.player-page .cell-image span{font-size:clamp(22px,3vw,42px);text-shadow:0 1px 5px #45614c88}
 .player-page .cell-image img{width:100%;height:100%;object-fit:cover;display:block}
 
-.player-page .image-cue-button{width:clamp(22px,2.2vw,30px);height:clamp(22px,2.2vw,30px);font-size:clamp(16px,1.5vw,22px)}
+.player-page .image-cue-button{position:absolute;transform:translate(-50%,-50%);width:26px;height:26px;display:grid;place-items:center;padding:0;border:2px solid #446a4a;border-radius:50%;background:#edf4e8;color:#31563b;font-size:18px;line-height:1;cursor:pointer}.player-page .image-cue-button:hover,.player-page .image-cue-button.clue-active{background:#cce0c3}
