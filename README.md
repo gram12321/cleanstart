@@ -8,9 +8,9 @@ Over feltet kan designeren vælge værktøjsikoner til bogstavfelter, sorte felt
 
 Et ordmellemrum med pil indsættes mellem bogstaverne i et svar og viser, at svaret består af flere ord, f.eks. `NEW → YORK`. Tilføj hele udtrykket som `NEW YORK;Amerikansk by` i ordbogen. Pilen tæller ikke som et bogstav, og spilleren springer den over. Ledetrådsfelter og pile bestemmes automatisk ud fra ordenes placering; bøjet pil til en frit valgt ledetråd kan ikke tilføjes manuelt.
 
-Når alle ord er udfyldt, kan designeren udgive krydsordet og bruge ordbogens ledetråde eller skrive sine egne. Udgivne krydsord gemmes lokalt og kan vælges på forsiden i samme browser; de deles ikke med andre enheder. Spillerens fremgang gemmes automatisk. Designeren kan navngive og gemme flere ufærdige kladder og åbne dem igen senere. Udgivelse tilføjer en ny kopi til spillerens liste.
+Når alle ord er udfyldt, kan designeren udgive krydsordet og bruge ordbogens ledetråde eller skrive sine egne. Udgivne krydsord gemmes i Supabase og kan vælges på forsiden med samme browseridentitet. Spillerens fremgang gemmes automatisk. Designeren kan navngive og gemme flere ufærdige kladder og åbne dem igen senere. Udgivelse tilføjer en ny kopi til spillerens liste.
 
-Den indbyggede ordbog indeholder håndskrevne lister og ord fra DanNet. Automatiske ledetråde er ikke individuelt gennemgået. Tilføj egne ord under **Udvid ordbogen**, ét pr. linje som `ORD;ledetråd`; de gemmes i browseren.
+Den indbyggede ordbog indeholder håndskrevne lister og ord fra DanNet. Automatiske ledetråde er ikke individuelt gennemgået. Tilføj egne ord under **Udvid ordbogen**, ét pr. linje som `ORD;ledetråd`; de gemmes i Supabase.
 
 Ord har en kildescore til prioritering af forslag: den håndskrevne grundliste og DanNet giver 1 point, `ShortClues` giver 2 point og egne ord 3 point. Forslagets viste point følger kilden til den enkelte ledetråd; samme ord kan derfor vise forskellige point ved forskellige ledetråde. Når ord prioriteres i autofyldning, bruges den højeste score blandt dets ordbogskilder; pointene lægges ikke sammen.
 
@@ -37,7 +37,7 @@ Open http://localhost:3001 to use the saved crosswords and drafts. The developme
 
 ### Supabase connection
 
-Copy `.env.example` to `.env.local` and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. These browser variables identify the project and use its publishable key; never put a Supabase secret or service-role key in a `VITE_` variable. The app exposes a configured Supabase client in `src/lib/supabase.ts`. Apply `supabase/migrations/202611110001_user_persistence.sql` to create the row-level secured persistence table, and enable anonymous sign-ins in Supabase Auth. Each browser receives an anonymous Supabase user, so saved crosswords, drafts, dictionaries, and progress remain private to that browser identity. Existing local storage values are imported on first connection. Keep the publishable key in `.env.local`; never expose a secret or service-role key.
+Copy `.env.example` to `.env.local` and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. These browser variables identify the project and use its publishable key; never put a Supabase secret or service-role key in a `VITE_` variable. The app exposes a configured Supabase client in `src/lib/supabase.ts`. Apply `supabase/migrations/202611110001_user_persistence.sql` to create the row-level secured persistence table, and enable anonymous sign-ins in Supabase Auth. Each browser receives an anonymous Supabase user, so saved crosswords, drafts, dictionaries, and progress remain private to that browser identity. On first connection, local storage values using the current storage keys are imported. Keep the publishable key in `.env.local`; never expose a secret or service-role key.
 
 Run the production build and type check with `pnpm build` and `pnpm typecheck`. Run the generator and browser checks with `pnpm test:e2e`.
 

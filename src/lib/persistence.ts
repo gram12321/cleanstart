@@ -1,11 +1,11 @@
 import { supabase } from "./supabase";
 
 export const STORAGE_KEYS = {
-  library: "ordvaerk-library-v1",
-  drafts: "ordvaerk-drafts-v1",
-  dictionaries: "ordvaerk-ordboger-v1",
-  legacyDictionary: "ordvaerk-ordbog",
-  play: "ordvaerk-play-v1",
+  library: "krydsvaerk-library-v1",
+  drafts: "krydsvaerk-drafts-v1",
+  dictionaries: "krydsvaerk-ordboger-v1",
+  legacyDictionary: "krydsvaerk-ordbog",
+  play: "krydsvaerk-play-v1",
 } as const;
 
 export type PersistedData = Record<string, unknown>;
