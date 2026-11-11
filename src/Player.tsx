@@ -23,6 +23,8 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     reset: <><path d="M4 10V5m0 0h5M4 5l3 3a7 7 0 1 1-1 8" /></>,
     book: <><path d="M12 6c-2-2-5-2-8-1v14c3-1 6-1 8 1 2-2 5-2 8-1V5c-3-1-6-1-8 1Z" /><path d="M12 6v14" /></>,
     arrow: <><path d="M5 12h14M14 7l5 5-5 5" /></>,
+    expand: <><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5" /></>,
+    collapse: <><path d="M3 8h5V3M21 8h-5V3M8 21v-5H3M16 21v-5h5" /></>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
@@ -43,6 +45,19 @@ export function Player({ published, library = [], preview = false, preferPublish
   const [puzzle, setPuzzle] = useState(() => initial?.puzzle ?? published ?? generatePuzzle(11, allEntries));
   const [selection, setSelection] = useState<Selection | null>(() => initialSelection(puzzle));
   const [answers, setAnswers] = useState<Answers>(() => initial?.answers ?? {});
+  const boardWrapRef = useRef<HTMLDivElement>(null);
+  const [isBoardFullscreen, setIsBoardFullscreen] = useState(false);
+  useEffect(() => {
+    const updateFullscreenState = () => setIsBoardFullscreen(document.fullscreenElement === boardWrapRef.current);
+    document.addEventListener("fullscreenchange", updateFullscreenState);
+    return () => document.removeEventListener("fullscreenchange", updateFullscreenState);
+  }, []);
+  const toggleBoardFullscreen = async () => {
+    const boardWrap = boardWrapRef.current;
+    if (!boardWrap) return;
+    if (document.fullscreenElement === boardWrap) await document.exitFullscreen();
+    else await boardWrap.requestFullscreen();
+  };
   const [playStorageError, setPlayStorageError] = useState("");
   const savedPlayRef = useRef(savedPlay);
   savedPlayRef.current = savedPlay;
@@ -206,10 +221,10 @@ export function Player({ published, library = [], preview = false, preferPublish
         </section>}
 
         <section className="puzzle-panel" aria-label="Krydsord">{playStorageError && <p role="alert">{playStorageError}</p>}
-          <div className="puzzle-header"><div><div className="section-label"><span>02</span> TID TIL AT TÆNKE</div><h2>Dit krydsord <span>✳</span></h2></div><div className="puzzle-tag"><span /> KLAR TIL ORD</div></div>
+          <div className="puzzle-header"><div><div className="section-label"><span>02</span> TID TIL AT TÆNKE</div><h2>Dit krydsord <span>✳</span></h2></div><div className="puzzle-header-actions"><button type="button" className="print-grid-button" onClick={() => window.print()}>Print gitter</button><button type="button" className="fullscreen-grid-button" onClick={() => void toggleBoardFullscreen()} aria-label={isBoardFullscreen ? "Afslut fuld skærm" : "Vis gitter i fuld skærm"} title={isBoardFullscreen ? "Afslut fuld skærm" : "Vis gitter i fuld skærm"}><Icon name={isBoardFullscreen ? "collapse" : "expand"} /><span>{isBoardFullscreen ? "Afslut" : "Fuld skærm"}</span></button><div className="puzzle-tag"><span /> KLAR TIL ORD</div></div></div>
           <div className="puzzle-meta"><span>{puzzle.size} × {puzzle.size} FELTER</span><span className="meta-separator" /> <span>{puzzle.placements.length} ORD</span><span className="meta-right">GOD FORNØJELSE!</span></div>
 
-          <div className="board-wrap" tabIndex={0} aria-label="Rul krydsordsfeltet vandret"><div className="board" role="group" aria-label="Krydsordsfelt" style={{ gridTemplateColumns: `repeat(${puzzle.size}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${puzzle.size}, minmax(0, 1fr))`, minWidth: `${puzzle.size * 48}px` }}>
+          <div ref={boardWrapRef} className="board-wrap" tabIndex={0} aria-label="Rul krydsordsfeltet vandret">{isBoardFullscreen && <button type="button" className="fullscreen-grid-exit" onClick={() => void toggleBoardFullscreen()}><Icon name="collapse" /> Afslut fuld skærm</button>}<div className="board" role="group" aria-label="Krydsordsfelt" style={{ gridTemplateColumns: `repeat(${puzzle.size}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${puzzle.size}, minmax(0, 1fr))` }}>
             {puzzle.cells.map((row, r) => row.map((cell, c) => {
               const key = keyOf(r, c);
               if (cell.kind === "covered") return null;
@@ -225,7 +240,7 @@ export function Player({ published, library = [], preview = false, preferPublish
                       : cell.height > 1 && placement.direction === "across" && (display.horizontal || display.words.length === 1) && placement.row >= r && placement.row < r + cell.height
                         ? { top: `${(placement.row - r + 0.5) * 100 / cell.height}%`, bottom: "auto", transform: "translateY(-50%)" }
                         : undefined;
-                    return <button key={placement.id} className={selection?.placementId === placement.id ? "clue-active" : ""} onClick={() => selectPlacement(placement)} aria-label={`${placement.clue}, ${placement.direction === "across" ? "vandret" : "lodret"}, ${placement.length} bogstaver, starter i række ${placement.row + 1}, kolonne ${placement.col + 1}`}><span>{placement.clue}</span><b aria-hidden="true" style={arrowPosition}>{placement.arrow}</b></button>;
+                    return <button key={placement.id} className={selection?.placementId === placement.id ? "clue-active" : ""} onClick={() => selectPlacement(placement)} aria-label={`${placement.clue}, ${placement.direction === "across" ? "vandret" : "lodret"}, ${placement.length} bogstaver, starter i række ${placement.row + 1}, kolonne ${placement.col + 1}`}><span className="clue-text" style={{ fontSize: cell.placementIds.length > 1 ? `clamp(6px, min(calc(100cqi / ${Math.max(1, placement.clue.length)}), 40cqb), 14px)` : undefined }}>{placement.clue}</span><b aria-hidden="true" style={arrowPosition}>{placement.arrow}</b></button>;
                   })}
                 </div>;
               }

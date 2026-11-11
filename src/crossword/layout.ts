@@ -30,15 +30,13 @@ export function orderClueWords<T extends { direction: Direction; row: number; co
     ? (a.direction === "down" ? -1 : 1)
     : a.direction === "down" ? a.col - b.col : a.row - b.row);
 }
-export function cluePresentation<T extends { direction: Direction; row: number; col: number }>(area: Area, words: T[]): { horizontal: boolean; words: T[] } {
+export function cluePresentation<T extends { direction: Direction; row: number; col: number }>(_area: Area, words: T[]): { horizontal: boolean; words: T[] } {
   const sorted = orderClueWords(words);
   if (sorted.length !== 2) return { horizontal: false, words: sorted };
-  if (sorted[0].direction === sorted[1].direction) {
-    return { horizontal: sorted[0].direction === "down" && area.width > 1, words: sorted };
+  if (sorted[0].direction !== sorted[1].direction) {
+    return { horizontal: false, words: [sorted[1], sorted[0]] };
   }
-  const down = sorted.find(word => word.direction === "down")!;
-  const horizontal = area.width === 1 || down.col < area.col + area.width / 2;
-  return { horizontal, words: horizontal ? sorted : sorted.reverse() };
+  return { horizontal: false, words: sorted };
 }
 
 export function wordCells(word: GridWord): Point[] {
