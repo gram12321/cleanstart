@@ -1,6 +1,6 @@
-# Ordværk
+# Krydsværk
 
-Ordværk har en forside til at løse krydsord og et værksted til at konstruere dem. Vælg et vandret eller lodret ord i designerens tomme felt, og indsæt et af forslagene. Du kan også skrive og slette bogstaver direkte. Vælg **Vandret** eller **Lodret** over feltet for at bestemme, hvilket ord et klik på et krydsningsfelt vælger. Et felt med kun ét ord vælger dette ord.
+Krydsværk har en forside til at løse krydsord og et værksted til at konstruere dem. Vælg et vandret eller lodret ord i designerens tomme felt, og indsæt et af forslagene. Du kan også skrive og slette bogstaver direkte. Vælg **Vandret** eller **Lodret** over feltet for at bestemme, hvilket ord et klik på et krydsningsfelt vælger. Et felt med kun ét ord vælger dette ord.
 
 Hvert vist forslag er kontrolleret mod hele feltet: løseren har fundet en samlet udfyldning med de aktuelle bogstaver og uden gentagne ord. Højst 40 bekræftede forslag vises. Ord, hvor søgningen når beregningsgrænsen, er uafklarede og tælles særskilt. Ingen forslag betyder derfor ikke nødvendigvis, at en løsning er umulig. Et nyt felt starter fra en eksisterende skabelon. Vælg **Autofyld ord** og klik på et felt for at søge efter et muligt ord med højest score; ved samme score prioriteres alfabetisk. **Fyld gitteret** søger efter en samlet udfyldning med højest mulig score. Eksisterende bogstaver bevares. Under søgningen vises fremskridt og fundne løsninger. Hvis beregningsgrænsen nås, indsættes den bedste bekræftede løsning, der er fundet, og det vises, at den ikke nødvendigvis er optimal. Hvis ingen løsning er fundet, ændres feltet ikke.
 
@@ -32,6 +32,12 @@ Requires Node.js and pnpm. Install dependencies and start the local app:
 pnpm install
 pnpm dev
 ```
+
+Open http://localhost:3001 to use the saved crosswords and drafts. The development server requires port 3001 to be available.
+
+### Supabase connection
+
+Copy `.env.example` to `.env.local` and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. These browser variables identify the project and use its publishable key; never put a Supabase secret or service-role key in a `VITE_` variable. The app exposes a configured Supabase client in `src/lib/supabase.ts`. Apply `supabase/migrations/202611110001_user_persistence.sql` to create the row-level secured persistence table, and enable anonymous sign-ins in Supabase Auth. Each browser receives an anonymous Supabase user, so saved crosswords, drafts, dictionaries, and progress remain private to that browser identity. Existing local storage values are imported on first connection. Keep the publishable key in `.env.local`; never expose a secret or service-role key.
 
 Run the production build and type check with `pnpm build` and `pnpm typecheck`. Run the generator and browser checks with `pnpm test:e2e`.
 

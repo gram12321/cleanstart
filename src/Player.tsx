@@ -29,11 +29,7 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
 
 type LibraryItem = { id: string; name: string; puzzle: Puzzle };
 type PlayState = { id: string; puzzle: Puzzle; answers: Answers };
-const PLAY_KEY = "ordvaerk-play-v1";
-function loadPlay(): { active?: PlayState; games: Record<string, PlayState> } {
-  try { const data = JSON.parse(localStorage.getItem(PLAY_KEY) ?? "null"); return data && data.games && typeof data.games === "object" ? data : { games: {} }; } catch { return { games: {} }; }
-}
-export function Player({ published, library = [], preview = false, preferPublished = false, dictionaries, onDictionariesChange }: { published: Puzzle | null; library?: LibraryItem[]; preview?: boolean; preferPublished?: boolean; dictionaries: CustomDictionary[]; onDictionariesChange: (next: CustomDictionary[]) => void }) {
+export function Player({ published, library = [], preview = false, preferPublished = false, dictionaries, onDictionariesChange, savedPlay, onPlayChange }: { published: Puzzle | null; library?: LibraryItem[]; preview?: boolean; preferPublished?: boolean; dictionaries: CustomDictionary[]; onDictionariesChange: (next: CustomDictionary[]) => void; savedPlay?: { active?: PlayState; games?: Record<string, PlayState> }; onPlayChange: (value: { active: PlayState; games: Record<string, PlayState> }) => void }) {
   const customEntries = useMemo(() => dictionaries.filter(item => item.useAutofill).flatMap(item => item.entries), [dictionaries]);
   const [dictionaryId, setDictionaryId] = useState(dictionaries[0]?.id ?? "");
   const selectedDictionary = dictionaries.find(item => item.id === dictionaryId) ?? dictionaries[0];
@@ -42,24 +38,24 @@ export function Player({ published, library = [], preview = false, preferPublish
     return [...dictionary.filter((entry) => !customWords.has(entry.word)), ...customEntries];
   }, [customEntries]);
   const [size, setSize] = useState(11);
-  const [savedPlay] = useState(() => preview ? { games: {} as Record<string, PlayState>, active: undefined as PlayState | undefined } : loadPlay());
-  const initial = !preview && !preferPublished && savedPlay.active?.puzzle?.cells && savedPlay.active?.puzzle?.placements ? savedPlay.active : null;
+  const initial = !preview && !preferPublished && savedPlay?.active?.puzzle?.cells && savedPlay.active?.puzzle?.placements ? savedPlay.active : null;
   const [puzzleId, setPuzzleId] = useState(() => initial?.id ?? (library.at(-1)?.id || "generated"));
   const [puzzle, setPuzzle] = useState(() => initial?.puzzle ?? published ?? generatePuzzle(11, allEntries));
   const [selection, setSelection] = useState<Selection | null>(() => initialSelection(puzzle));
   const [answers, setAnswers] = useState<Answers>(() => initial?.answers ?? {});
   const [playStorageError, setPlayStorageError] = useState("");
+  const savedPlayRef = useRef(savedPlay);
+  savedPlayRef.current = savedPlay;
   useEffect(() => {
     if (preview) return;
-    try {
-      const data = loadPlay();
-      const current = { id: puzzleId, puzzle, answers };
-      data.active = current;
-      data.games[puzzleId] = current;
-      localStorage.setItem(PLAY_KEY, JSON.stringify(data));
+    const current = { id: puzzleId, puzzle, answers };
+    const data = { active: current, games: { ...savedPlayRef.current?.games, [puzzleId]: current } };
+    const timer = window.setTimeout(() => {
+      onPlayChange(data);
       setPlayStorageError("");
-    } catch { setPlayStorageError("Din fremgang kunne ikke gemmes i browseren."); }
-  }, [puzzleId, puzzle, answers, preview]);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [puzzleId, puzzle, answers, preview, onPlayChange]);
   const [checked, setChecked] = useState(false);
   const [message, setMessage] = useState("");
   const [dictionaryText, setDictionaryText] = useState("");
@@ -183,7 +179,7 @@ export function Player({ published, library = [], preview = false, preferPublish
   return (
     <div className="player-page"><div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="Ordværk, til forsiden"><span className="brand-mark"><span>O</span><span>R</span><span>D</span><span>V</span></span><span>ordværk<span className="brand-dot">.</span></span></a>
+        <a className="brand" href="#top" aria-label="Krydsværk, til forsiden"><span className="brand-mark"><span>K</span><span>R</span><span>Y</span><span>D</span></span><span>krydsværk<span className="brand-dot">.</span></span></a>
         <div className="topbar-note"><span className="note-dot" /> EN LILLE PAUSE TIL HOVEDET</div>
         <span className="topbar-edition">LAVET TIL ORDGLÆDE <span>✳</span></span>
       </header>
@@ -196,7 +192,7 @@ export function Player({ published, library = [], preview = false, preferPublish
             <p className="intro-description">Tag en pause, find ordene, og lad bogstaverne falde på plads.</p>
           </div>
 
-          {library.length > 0 && <div className="settings-card"><div className="section-label"><span>01</span> FRA DESIGNEREN</div><label htmlFor="published-choice">Vælg krydsord</label><select id="published-choice" value={library.some(item => item.id === puzzleId) ? puzzleId : ""} onChange={event => { const item = library.find(entry => entry.id === event.target.value); if (!item) return; const previous = loadPlay().games[item.id]; setPuzzleId(item.id); setPuzzle(item.puzzle); setAnswers(previous?.answers ?? {}); setSelection(initialSelection(item.puzzle)); setChecked(false); setMessage("Designerens krydsord er klar."); }}><option value="">Vælg krydsord</option>{library.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="primary-button" onClick={() => { const item = library.find(entry => entry.id === puzzleId) ?? library[library.length - 1]; const previous = loadPlay().games[item.id]; setPuzzleId(item.id); setPuzzle(item.puzzle); setAnswers(previous?.answers ?? {}); setSelection(initialSelection(item.puzzle)); setChecked(false); setMessage("Designerens krydsord er klar."); }}>Åbn designerens krydsord <Icon name="arrow" /></button></div>}
+          {library.length > 0 && <div className="settings-card"><div className="section-label"><span>01</span> FRA DESIGNEREN</div><label htmlFor="published-choice">Vælg krydsord</label><select id="published-choice" value={library.some(item => item.id === puzzleId) ? puzzleId : ""} onChange={event => { const item = library.find(entry => entry.id === event.target.value); if (!item) return; const previous = savedPlay?.games?.[item.id]; setPuzzleId(item.id); setPuzzle(item.puzzle); setAnswers(previous?.answers ?? {}); setSelection(initialSelection(item.puzzle)); setChecked(false); setMessage("Designerens krydsord er klar."); }}><option value="">Vælg krydsord</option>{library.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="primary-button" onClick={() => { const item = library.find(entry => entry.id === puzzleId) ?? library[library.length - 1]; const previous = savedPlay?.games?.[item.id]; setPuzzleId(item.id); setPuzzle(item.puzzle); setAnswers(previous?.answers ?? {}); setSelection(initialSelection(item.puzzle)); setChecked(false); setMessage("Designerens krydsord er klar."); }}>Åbn designerens krydsord <Icon name="arrow" /></button></div>}
           <div className="settings-card">
             <div className="section-label"><span>01</span> PRØV ET TILFÆLDIGT KRYDSORD</div>
             <label htmlFor="grid-size">Størrelse på feltet</label>
@@ -254,7 +250,7 @@ export function Player({ published, library = [], preview = false, preferPublish
         </section>
       </main>
       {!preview && <section className="dictionary-section"><div className="dictionary-heading"><span className="dictionary-icon"><Icon name="book" size={21} /></span><div><h2>Flere ord at lege med</h2><p>Ordbogen indeholder {new Set(dictionary.map((entry) => entry.word)).size} danske ord med ledetråde, blandt andet fra <a href="https://wordnet.dk/dannet" target="_blank" rel="noreferrer">DanNet</a> (CC BY-SA 4.0). Tilføj dine egne for mere variation.</p></div></div><details><summary>Udvid ordbogen <span>＋</span></summary><div className="dictionary-content"><label>Ordbog <select value={selectedDictionary?.id ?? ""} onChange={event => setDictionaryId(event.target.value)}>{dictionaries.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label htmlFor="dictionary-input">Ledetråd: svar|svar eller ord;ledetråd;ledetråd pr. linje</label><textarea id="dictionary-input" value={dictionaryText} onChange={(event) => setDictionaryText(event.target.value)} placeholder={'Pigenavn: Hanne|Sigrid\nCYKEL;Køretøj med to hjul'} rows={4} /><div className="dictionary-bottom"><button onClick={addEntries}>Gem ord</button><p>Gemt i denne browser · {customEntries.length} {customEntries.length === 1 ? "eget ord" : "egne ord"}</p></div><p role="status">{dictionaryMessage}</p></div></details></section>}
-      <footer className="footer"><span>ORDVÆRK <span>✳</span> EN PAUSE MED MENING</span><span>GOD FORNØJELSE MED ORDENE</span></footer>
+      <footer className="footer"><span>KRYDSVÆRK <span>✳</span> EN PAUSE MED MENING</span><span>GOD FORNØJELSE MED ORDENE</span></footer>
     </div></div>
   );
 }
