@@ -9,7 +9,8 @@ Krydsværk generates and plays Danish-style crosswords, with clues and direction
 ## Confirmed decisions
 
 - Generate connected horizontal and vertical words of varying lengths from Danish words and clues.
-- The dictionary combines short clues from a local starting list with clues derived from DanNet; users can add their own word and clue pairs.
+- The built-in dictionary is organized into a hand-written starter list, curated short crossword clues, a separate hyphenated-word collection, and clues derived from DanNet; users can add their own word and clue pairs.
+- Users can include or omit each built-in collection. The shared selection applies to designer suggestions and autofill as well as newly generated player puzzles, and persists in Supabase.
 - A spelling can have multiple clues and a clue can describe multiple spellings. Designers can add distinct pairs and select a clue together with a verified answer; changing answer letters clears affected selected clues.
 - Dictionary answers carry their normalized spelling, derived letter count, source, and optional linguistic/concept metadata. Length buckets are derived from the entries for generator lookup.
 - Curated answers that can serve the same clue concept share a `clueGroupId`; each answer still has its own spelling, clue, and length so the generator can choose a crossing-compatible variant.

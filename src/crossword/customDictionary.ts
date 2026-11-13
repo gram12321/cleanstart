@@ -14,7 +14,7 @@ export function parseCustomEntries(text: string): DictionaryEntry[] | null {
     for (const [rawWord, rawClue] of pairs) {
       const word = rawWord.trim().toLocaleUpperCase("da-DK").replace(/\s+/g, " ");
       const clue = rawClue.trim();
-      if (!/^[A-ZÆØÅ]+(?: [A-ZÆØÅ]+)*$/.test(word) || !clue) return null;
+      if (!/^[A-ZÆØÅ]+(?:[ -][A-ZÆØÅ]+)*$/.test(word) || !clue) return null;
       entries.push({ word, clue, length: answerLetters(word).length, source: "custom" });
     }
   }
@@ -44,5 +44,5 @@ export function parseCustomDictionaries(saved: unknown): CustomDictionary[] {
 }
 function validEntries(value: unknown): DictionaryEntry[] {
   if (!Array.isArray(value)) return [];
-  return value.filter(entry => typeof entry?.word === "string" && /^[A-ZÆØÅ]+(?: [A-ZÆØÅ]+)*$/.test(entry.word) && typeof entry.clue === "string" && entry.clue.trim()).map(entry => ({ ...entry, length: answerLetters(entry.word).length, source: "custom" as const }));
+  return value.filter(entry => typeof entry?.word === "string" && /^[A-ZÆØÅ]+(?:[ -][A-ZÆØÅ]+)*$/.test(entry.word) && typeof entry.clue === "string" && entry.clue.trim()).map(entry => ({ ...entry, length: answerLetters(entry.word).length, source: "custom" as const }));
 }

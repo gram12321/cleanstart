@@ -19,7 +19,7 @@ The scripts are declared in `package.json`: `dev`, `typecheck`, `build`, `previe
 ## Current repository shape
 
 - `index.html` and `src/` provide the crossword application; `src/crossword/` contains the dictionary and generator.
-- `src/crossword/data/` contains the filtered DanNet dataset, and `scripts/import_dannet.py` recreates it from a pinned upstream release.
+- `src/crossword/data/` contains separate hand-curated starter, short-clue, and hyphenated-word collections alongside the filtered DanNet dataset; `scripts/import_dannet.py` recreates the DanNet subset from a pinned upstream release.
 - `vite.config.ts`, `tsconfig.json`, and `playwright.config.ts` configure the toolchain.
 - `docs/WorkingDocs/` contains project notes and decision records.
 - `supabase/migrations/` contains database schema and access policy migrations.

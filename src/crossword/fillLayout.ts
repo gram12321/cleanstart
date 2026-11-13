@@ -1,4 +1,4 @@
-﻿import { indexWordScores, type DictionaryEntry } from "./dictionary";
+﻿import { indexWordScores, isValidAnswerSpelling, type DictionaryEntry } from "./dictionary";
 import { answerLetters, fitsBreaks, validateLayout, wordCells, type GridLayout } from "./layout";
 
 export type FillResult =
@@ -24,7 +24,7 @@ function makeIndex(entries: readonly DictionaryEntry[], lengths: Set<number>): M
   const seen = new Set<string>();
   // Custom clues override the built-in clue for the same answer.
   for (const entry of [...entries.filter(e => e.source === "custom"), ...entries.filter(e => e.source !== "custom")]) {
-    if (!lengths.has(answerLetters(entry.word).length) || !/^[A-ZÆØÅ]+(?: [A-ZÆØÅ]+)*$/.test(entry.word) || seen.has(entry.word)) continue;
+    if (!lengths.has(answerLetters(entry.word).length) || !isValidAnswerSpelling(entry.word) || seen.has(entry.word)) continue;
     seen.add(entry.word);
     const length = answerLetters(entry.word).length;
     const bucket = groups.get(length) ?? [];

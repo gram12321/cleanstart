@@ -1,5 +1,5 @@
 ﻿import { fillLayout } from "./fillLayout";
-import { indexWordScores, type DictionaryEntry } from "./dictionary";
+import { indexWordScores, isValidAnswerSpelling, type DictionaryEntry } from "./dictionary";
 import { answerLetters, fitsBreaks, wordCells, type GridLayout } from "./layout";
 
 self.onmessage = (event: MessageEvent<{ layout: GridLayout; entries: DictionaryEntry[]; letters: Record<string, string>; selected?: string }>) => {
@@ -20,7 +20,7 @@ self.onmessage = (event: MessageEvent<{ layout: GridLayout; entries: DictionaryE
   if (!slot) return;
   const scores = indexWordScores(entries);
   const cells = wordCells(slot);
-  const candidates = [...new Map(entries.filter(entry => answerLetters(entry.word).length === slot.length && fitsBreaks(slot, entry.word) && cells.every((cell, i) => !letters[`${cell.row},${cell.col}`] || letters[`${cell.row},${cell.col}`] === answerLetters(entry.word)[i])).map(entry => [entry.word, entry])).values()]
+  const candidates = [...new Map(entries.filter(entry => answerLetters(entry.word).length === slot.length && isValidAnswerSpelling(entry.word) && fitsBreaks(slot, entry.word) && cells.every((cell, i) => !letters[`${cell.row},${cell.col}`] || letters[`${cell.row},${cell.col}`] === answerLetters(entry.word)[i])).map(entry => [entry.word, entry])).values()]
     .sort((a, b) => (scores.get(b.word) ?? 0) - (scores.get(a.word) ?? 0) || a.word.localeCompare(b.word, "da"));
   let checked = 0, uncertain = 0, attemptNodes = 0;
   report({ mode: "word", checked, total: candidates.length, uncertain, nodes: 0 }, true);

@@ -4,11 +4,14 @@ export const STORAGE_KEYS = {
   library: "krydsvaerk-library-v1",
   drafts: "krydsvaerk-drafts-v1",
   dictionaries: "krydsvaerk-ordboger-v1",
+  builtinDictionarySettings: "krydsvaerk-indbyggede-ordboger-v1",
   legacyDictionary: "krydsvaerk-ordbog",
   play: "krydsvaerk-play-v1",
 } as const;
 
 export type PersistedData = Record<string, unknown>;
+
+export type PublicCrossword = { id: string; name: string; puzzle: unknown };
 
 let loading: Promise<PersistedData> | null = null;
 
@@ -36,6 +39,12 @@ async function loadPersistedDataOnce(): Promise<PersistedData> {
   if (readError) throw readError;
 
   const data: PersistedData = Object.fromEntries((rows ?? []).map(row => [row.key, row.value]));
+  const { data: publicCrosswords, error: publicReadError } = await supabase
+    .from("published_crosswords")
+    .select("id, name, puzzle")
+    .order("created_at", { ascending: true });
+  if (publicReadError) throw publicReadError;
+  data.__public_crosswords = publicCrosswords ?? [];
   if (data.__local_storage_migrated !== true) {
     const migration: Record<string, unknown> = {};
     for (const key of Object.values(STORAGE_KEYS)) {
@@ -53,6 +62,19 @@ async function loadPersistedDataOnce(): Promise<PersistedData> {
     Object.assign(data, migration, { __local_storage_migrated: true });
   }
   return data;
+}
+
+export async function publishPublicCrossword(name: string, puzzle: unknown): Promise<PublicCrossword> {
+  if (!supabase) throw new Error("Supabase er ikke configured.");
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+  if (!session) throw new Error("Supabase-sessionen er udløbet.");
+  const { data, error } = await supabase.from("published_crosswords")
+    .insert({ owner_id: session.user.id, name, puzzle })
+    .select("id, name, puzzle")
+    .single();
+  if (error) throw error;
+  return data as PublicCrossword;
 }
 
 export async function savePersistedValue(key: string, value: unknown): Promise<void> {

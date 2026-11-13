@@ -1,7 +1,8 @@
 import { customEntryKey, parseCustomEntries, parseCustomDictionaries, type CustomDictionary } from "./crossword/customDictionary";
-import { loadPersistedData, savePersistedValue, STORAGE_KEYS, type PersistedData } from "./lib/persistence";
+import { loadPersistedData, publishPublicCrossword, savePersistedValue, STORAGE_KEYS, type PersistedData, type PublicCrossword } from "./lib/persistence";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { dictionary, indexWordScores, type DictionaryEntry } from "./crossword/dictionary";
+import { dictionary, indexWordScores, parseBuiltinDictionarySettings, type BuiltinDictionarySettings, type DictionaryEntry } from "./crossword/dictionary";
+import { BuiltinDictionaryOptions } from "./crossword/BuiltinDictionaryOptions";
 import { createTemplateLayout } from "./crossword/templateLayouts";
 import { answerLetters, cluePresentation, fitsBreaks, imageCueTargets, layoutIssues, wordCells, type GridLayout, type GridWord } from "./crossword/layout";
 import { editLayout, resizeImageArea, sameSlot, type LayoutTool } from "./crossword/editLayout";
@@ -60,6 +61,9 @@ const DRAFTS_KEY = STORAGE_KEYS.drafts;
 function validLibrary(value: unknown): PublishedItem[] {
   return Array.isArray(value) ? value.filter((item): item is PublishedItem => Boolean(item && typeof item.id === "string" && typeof item.name === "string" && item.puzzle && Array.isArray(item.puzzle.cells) && Array.isArray(item.puzzle.placements))) : [];
 }
+function validPublicLibrary(value: unknown): PublishedItem[] {
+  return validLibrary(value);
+}
 export function App() {
   const [page, setPage] = useState<"player" | "designer" | "preview">("player");
   const [justPublished, setJustPublished] = useState(false);
@@ -70,6 +74,7 @@ export function App() {
     void savePersistedValue(STORAGE_KEYS.play, value).then(() => setData(current => current ? { ...current, [STORAGE_KEYS.play]: value } : current)).catch(() => setStorageError("Din fremgang kunne ikke gemmes i Supabase."));
   }, []);
   useEffect(() => { let active = true; loadPersistedData().then(value => { if (active) setData(value); }).catch(() => { if (active) setStorageError("Forbindelsen til Supabase mislykkedes. Kontrollér konfiguration, anonym adgang og databasetabellen."); }); return () => { active = false; }; }, []);
+  const builtinDictionarySettings = useMemo(() => parseBuiltinDictionarySettings(data?.[STORAGE_KEYS.builtinDictionarySettings]), [data?.[STORAGE_KEYS.builtinDictionarySettings]]);
   async function persist(key: string, value: unknown) {
     await savePersistedValue(key, value);
     setData(current => current ? { ...current, [key]: value } : current);
@@ -78,20 +83,26 @@ export function App() {
   if (!data) return <main className="app-shell">{storageError ? <p role="alert">{storageError}</p> : <p>Opretter forbindelse til Supabase…</p>}</main>;
   const dictionaryValue = data[STORAGE_KEYS.dictionaries] ?? (Array.isArray(data[STORAGE_KEYS.legacyDictionary]) ? [{ id: "default", name: "Egen ordbog", showSuggestions: true, useAutofill: true, entries: data[STORAGE_KEYS.legacyDictionary] }] : []);
   const dictionaries = parseCustomDictionaries(dictionaryValue);
-  const library = validLibrary(data[LIBRARY_KEY]);
+  const library = [...validLibrary(data[LIBRARY_KEY]), ...validPublicLibrary(data.__public_crosswords)];
   const drafts = Array.isArray(data[DRAFTS_KEY]) ? data[DRAFTS_KEY] as Draft[] : [];
   const play = data[STORAGE_KEYS.play] as { active?: { id: string; puzzle: Puzzle; answers: Record<string, string> }; games?: Record<string, { id: string; puzzle: Puzzle; answers: Record<string, string> }> } | undefined;
   const updateDictionaries = (next: CustomDictionary[]) => { void persist(STORAGE_KEYS.dictionaries, next).catch(() => setStorageError("Ordbøgerne kunne ikke gemmes i Supabase.")); };
+  const updateBuiltinDictionarySettings = (next: BuiltinDictionarySettings) => {
+    setData(current => current ? { ...current, [STORAGE_KEYS.builtinDictionarySettings]: next } : current);
+    void savePersistedValue(STORAGE_KEYS.builtinDictionarySettings, next).then(() => setStorageError("")).catch(() => setStorageError("Ordbogsvalgene kunne ikke gemmes i Supabase."));
+  };
   async function publishPuzzle(puzzle: Puzzle, name: string) {
-    await persist(LIBRARY_KEY, [...library, { id: crypto.randomUUID(), name, puzzle }]);
+    const publishedPuzzle = await publishPublicCrossword(name, puzzle);
+    setData(current => current ? { ...current, __public_crosswords: [...(Array.isArray(current.__public_crosswords) ? current.__public_crosswords as PublicCrossword[] : []), publishedPuzzle] } : current);
     setJustPublished(true);
   }
   const published = library.at(-1)?.puzzle ?? null;
-  return <><nav className="site-nav" aria-label="Vælg side"><button aria-current={page === "player" ? "page" : undefined} onClick={() => setPage("player")}>Løs krydsord</button><button aria-current={page === "designer" ? "page" : undefined} onClick={() => { setJustPublished(false); setPage("designer"); }}>Designerværksted</button></nav>{storageError && <p role="alert">{storageError}</p>}<div hidden={page !== "player"}>{page === "player" && <Player published={published} library={library} preferPublished={justPublished} dictionaries={dictionaries} onDictionariesChange={updateDictionaries} savedPlay={play} onPlayChange={savePlay} />}</div><div hidden={page !== "designer"}><Designer dictionaries={dictionaries} onDictionariesChange={updateDictionaries} onPublish={publishPuzzle} drafts={drafts} onDraftsChange={next => persist(DRAFTS_KEY, next).catch(error => { setStorageError("Kladderne kunne ikke gemmes i Supabase."); throw error; })} onPreview={puzzle => { setPreview(puzzle); setPage("preview"); }} /></div>{page === "preview" && preview && <><div className="preview-notice"><strong>Forhåndsvisning af kladde</strong><span>Krydsordet er ikke udgivet. Her kan du se feltet og ledetrådene, som spilleren vil se dem.</span><button onClick={() => setPage("designer")}>Tilbage til designeren</button></div><Player published={preview} preview dictionaries={dictionaries} onDictionariesChange={updateDictionaries} savedPlay={play} onPlayChange={savePlay} /></>}</>;
+  return <><nav className="site-nav" aria-label="Vælg side"><button aria-current={page === "player" ? "page" : undefined} onClick={() => setPage("player")}>Løs krydsord</button><button aria-current={page === "designer" ? "page" : undefined} onClick={() => { setJustPublished(false); setPage("designer"); }}>Designerværksted</button></nav>{storageError && <p role="alert">{storageError}</p>}<div hidden={page !== "player"}>{page === "player" && <Player published={published} library={library} preferPublished={justPublished} dictionaries={dictionaries} onDictionariesChange={updateDictionaries} builtinDictionarySettings={builtinDictionarySettings} onBuiltinDictionarySettingsChange={updateBuiltinDictionarySettings} savedPlay={play} onPlayChange={savePlay} />}</div><div hidden={page !== "designer"}><Designer dictionaries={dictionaries} onDictionariesChange={updateDictionaries} builtinDictionarySettings={builtinDictionarySettings} onBuiltinDictionarySettingsChange={updateBuiltinDictionarySettings} onPublish={publishPuzzle} drafts={drafts} onDraftsChange={next => persist(DRAFTS_KEY, next).catch(error => { setStorageError("Kladderne kunne ikke gemmes i Supabase."); throw error; })} onPreview={puzzle => { setPreview(puzzle); setPage("preview"); }} /></div>{page === "preview" && preview && <><div className="preview-notice"><strong>Forhåndsvisning af kladde</strong><span>Krydsordet er ikke udgivet. Her kan du se feltet og ledetrådene, som spilleren vil se dem.</span><button onClick={() => setPage("designer")}>Tilbage til designeren</button></div><Player published={preview} preview dictionaries={dictionaries} onDictionariesChange={updateDictionaries} builtinDictionarySettings={builtinDictionarySettings} onBuiltinDictionarySettingsChange={updateBuiltinDictionarySettings} savedPlay={play} onPlayChange={savePlay} /></>}</>;
 }
-function Designer({ onPublish, onPreview, dictionaries, onDictionariesChange, drafts, onDraftsChange }: { onPublish: (puzzle: Puzzle, name: string) => Promise<void>; onPreview: (puzzle: Puzzle) => void; dictionaries: CustomDictionary[]; onDictionariesChange: (next: CustomDictionary[]) => void; drafts: Draft[]; onDraftsChange: (next: Draft[]) => Promise<void> }) {
-  const entries = useMemo(() => [...dictionaries.filter(item => item.showSuggestions).flatMap(item => item.entries), ...dictionary], [dictionaries]);
-  const autofillEntries = useMemo(() => [...dictionaries.filter(item => item.useAutofill).flatMap(item => item.entries), ...dictionary], [dictionaries]);
+function Designer({ onPublish, onPreview, dictionaries, onDictionariesChange, builtinDictionarySettings, onBuiltinDictionarySettingsChange, drafts, onDraftsChange }: { onPublish: (puzzle: Puzzle, name: string) => Promise<void>; onPreview: (puzzle: Puzzle) => void; dictionaries: CustomDictionary[]; onDictionariesChange: (next: CustomDictionary[]) => void; builtinDictionarySettings: BuiltinDictionarySettings; onBuiltinDictionarySettingsChange: (next: BuiltinDictionarySettings) => void; drafts: Draft[]; onDraftsChange: (next: Draft[]) => Promise<void> }) {
+  const builtinEntries = useMemo(() => dictionary.filter(entry => entry.source !== "custom" && builtinDictionarySettings[entry.source]), [builtinDictionarySettings]);
+  const entries = useMemo(() => [...dictionaries.filter(item => item.showSuggestions).flatMap(item => item.entries), ...builtinEntries], [dictionaries, builtinEntries]);
+  const autofillEntries = useMemo(() => [...dictionaries.filter(item => item.useAutofill).flatMap(item => item.entries), ...builtinEntries], [dictionaries, builtinEntries]);
   const allEntries = useMemo(() => [...dictionaries.flatMap(item => item.entries), ...dictionary], [dictionaries]);
   const [dictionaryId, setDictionaryId] = useState(dictionaries[0]?.id ?? "");
   const [designerTab, setDesignerTab] = useState<"workshop" | "dictionaries">("workshop");
@@ -438,16 +449,15 @@ function Designer({ onPublish, onPreview, dictionaries, onDictionariesChange, dr
       answers[word.id] = { ...entry, clue: clues[word.id]?.trim() || entry.clue };
     }
     const puzzle = puzzleFromLayout(layout, answers);
-    try { onPublish(puzzle, designName.trim() || `Krydsord ${new Date().toLocaleString("da-DK")}`); setPublishMessage("Krydsordet er udgivet på forsiden i denne browser."); }
-    catch { setPublishMessage("Krydsordet kunne ikke gemmes i browseren."); }
+    void onPublish(puzzle, designName.trim() || `Krydsord ${new Date().toLocaleString("da-DK")}`).then(() => setPublishMessage("Krydsordet er udgivet og kan ses af alle på forsiden.")).catch(() => setPublishMessage("Krydsordet kunne ikke udgives. Kontrollér forbindelsen til Supabase."));
   }
   const pattern = selected ? wordCells(selected).map((cell, i) => `${selected.breaks?.includes(i) ? " " : ""}${letters[keyOf(cell.row, cell.col)] || "·"}`).join("") : "";
   return <div className="editor-shell">
     <header className="editor-header"><div className="brand">krydsværk<span className="brand-dot">.</span></div><span>KRYDSORDSVÆRKSTED</span></header>
     <main className="editor-main">
-      <div className="editor-title"><div><p className="eyebrow">{designerTab === "workshop" ? "KONSTRUÉR ET KRYDSORD" : "DIT PERSONLIGE ORDARKIV"}</p><h1>{designerTab === "workshop" ? <>Find de rigtige <em>ord.</em></> : <>Dine egne <em>ordbøger.</em></>}</h1><p>{designerTab === "workshop" ? "Vælg et ord i feltet, og se hvilke muligheder der kan føre til en samlet løsning." : "Saml og vedligehold dine egne ord og ledetråde."}</p></div></div>
+      <div className="editor-title"><div><p className="eyebrow">{designerTab === "workshop" ? "KONSTRUÉR ET KRYDSORD" : "ORDBØGER"}</p><h1>{designerTab === "workshop" ? <>Find de rigtige <em>ord.</em></> : <>Vælg dine <em>ordbøger.</em></>}</h1><p>{designerTab === "workshop" ? "Vælg et ord i feltet, og se hvilke muligheder der kan føre til en samlet løsning." : "Vælg indbyggede samlinger, og vedligehold dine egne ord og ledetråde."}</p></div></div>
 
-    <nav className="designer-tabs" aria-label="Designerens værktøjer"><button type="button" aria-current={designerTab === "workshop" ? "page" : undefined} onClick={() => setDesignerTab("workshop")}>Krydsord</button><button type="button" aria-current={designerTab === "dictionaries" ? "page" : undefined} onClick={() => setDesignerTab("dictionaries")}>Egne ordbøger <span>{dictionaries.length}</span></button></nav>
+    <nav className="designer-tabs" aria-label="Designerens værktøjer"><button type="button" aria-current={designerTab === "workshop" ? "page" : undefined} onClick={() => setDesignerTab("workshop")}>Krydsord</button><button type="button" aria-current={designerTab === "dictionaries" ? "page" : undefined} onClick={() => setDesignerTab("dictionaries")}>Ordbøger <span>{dictionaries.length}</span></button></nav>
           {designerTab === "workshop" && <section className="designer-control-bar" aria-label="Indstillinger for krydsord">
         <div className="designer-control-group grid-setup"><span className="designer-control-label">GITTER</span><div className="designer-control-row"><label htmlFor="size">Feltets størrelse</label><select id="size" value={size} onChange={event => setSize(Number(event.target.value))}><option value={9}>9 × 9</option><option value={11}>11 × 11</option><option value={13}>13 × 13</option></select><button type="button" className="secondary-action" onClick={newLayout}>Nyt tomt felt</button></div></div>
         <div className="designer-control-group draft-setup"><span className="designer-control-label">KLADDE</span><div className="designer-control-row"><input aria-label="Designets navn" value={designName} onChange={event => setDesignName(event.target.value)} placeholder="Navngiv designet" /><button type="button" className="secondary-action" onClick={saveDraft}>Gem kladde</button>{drafts.length > 0 && <select aria-label="Åbn gemt kladde" value={draftId} onChange={event => openDraft(event.target.value)}><option value="">Åbn gemt kladde</option>{drafts.map(draft => <option key={draft.id} value={draft.id}>{draft.name}</option>)}</select>}</div></div>
@@ -533,8 +543,9 @@ function Designer({ onPublish, onPreview, dictionaries, onDictionariesChange, dr
       {progress.done && suggestions.length === 0 && <p className="empty">Ingen bekræftede muligheder. Prøv at ændre eller fjerne bogstaver.</p>}
       <button className="subtle clear-word" onClick={() => { const next = { ...letters }; wordCells(selected).forEach(cell => delete next[keyOf(cell.row, cell.col)]); updateLetters(next); }}>Ryd det valgte ord</button></> : <p>Vælg et ord i feltet.</p>}
     </aside></div>}
-    {designerTab === "dictionaries" && <section className="dictionary-manager" aria-label="Egne ordbøger">
+    {designerTab === "dictionaries" && <section className="dictionary-manager" aria-label="Ordbøger">
       <header className="dictionary-manager-header"><div><span className="eyebrow">DIT PERSONLIGE ORDARKIV</span><h2>Egne ordbøger</h2><p>Hold dine ord samlet i navngivne ordbøger. Vælg selv, hvilke der bidrager til forslag og autofyldning.</p></div><div className="dictionary-create"><label htmlFor="new-dictionary-name">Ny ordbog</label><div><input id="new-dictionary-name" value={newName} onChange={event => setNewName(event.target.value)} placeholder="Fx Steder eller Fagord" /><button type="button" onClick={() => { const name = newName.trim(); if (!name) { setMessage("Skriv et navn til ordbogen."); return; } const item: CustomDictionary = { id: crypto.randomUUID(), name, entries: [], showSuggestions: true, useAutofill: true }; onDictionariesChange([...dictionaries, item]); setDictionaryId(item.id); setNewName(""); setText(""); setMessage(""); }}>Opret ordbog</button></div></div></header>
+      <div className="builtin-dictionary-settings"><BuiltinDictionaryOptions settings={builtinDictionarySettings} onChange={onBuiltinDictionarySettingsChange} /></div>
       <div className="dictionary-manager-body"><aside className="dictionary-list" aria-label="Dine ordbøger"><div className="dictionary-list-heading"><span>DINE ORDBØGER</span><strong>{dictionaries.length}</strong></div>{dictionaries.map(item => <button type="button" key={item.id} className={currentDictionary?.id === item.id ? "active" : ""} aria-current={currentDictionary?.id === item.id ? "true" : undefined} onClick={() => { setDictionaryId(item.id); setEditingKey(null); setText(""); setMessage(""); }}><span>{item.name}</span><small>{item.entries.length} ord</small></button>)}{dictionaries.length === 0 && <p>Opret din første ordbog ovenfor.</p>}</aside>
       {currentDictionary ? <div className="dictionary-workspace"><div className="dictionary-workspace-top"><div><span className="eyebrow">VALGT ORDBOG</span><h3>{currentDictionary.name}</h3><p>{currentDictionary.entries.length} gemte ord og ledetråde</p></div><label className="dictionary-name-edit">Navn<input aria-label="Ordbogens navn" key={currentDictionary.id} defaultValue={currentDictionary.name} onBlur={event => { const name = event.target.value.trim(); if (name) updateDictionary({ ...currentDictionary, name }); else event.target.value = currentDictionary.name; }} onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label><button className="danger-button" type="button" onClick={() => { if (window.confirm(`Slet ordbogen "${currentDictionary.name}" og alle dens ord?`)) { const remaining = dictionaries.filter(item => item.id !== currentDictionary.id); onDictionariesChange(remaining); setDictionaryId(remaining[0]?.id ?? ""); setEditingKey(null); setText(""); setMessage(""); } }}>Slet ordbog</button></div>
       <div className="dictionary-entry-add"><div><h4>Tilføj ord og ledetråde</h4><p>Et ord pr. linje: <code>ORD;ledetråd</code>. Flere ledetråde kan følge efter semikolon.</p></div><textarea aria-label="Ord og ledetråde" value={text} onChange={event => setText(event.target.value)} placeholder={'Pigenavn: Hanne|Sigrid\nCYKEL;Køretøj med to hjul'} rows={3} /><button type="button" onClick={addWords}>Tilføj ord</button></div>

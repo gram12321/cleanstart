@@ -1,7 +1,8 @@
 import { customEntryKey, parseCustomEntries, type CustomDictionary } from "./crossword/customDictionary";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { dictionary } from "./crossword/dictionary";
+import { dictionary, type BuiltinDictionarySettings } from "./crossword/dictionary";
+import { BuiltinDictionaryOptions } from "./crossword/BuiltinDictionaryOptions";
 import { generatePuzzle, placementCells } from "./crossword/generator";
 import { cluePresentation } from "./crossword/layout";
 import type { Direction, Placement, Puzzle } from "./crossword/generator";
@@ -31,14 +32,15 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
 
 type LibraryItem = { id: string; name: string; puzzle: Puzzle };
 type PlayState = { id: string; puzzle: Puzzle; answers: Answers };
-export function Player({ published, library = [], preview = false, preferPublished = false, dictionaries, onDictionariesChange, savedPlay, onPlayChange }: { published: Puzzle | null; library?: LibraryItem[]; preview?: boolean; preferPublished?: boolean; dictionaries: CustomDictionary[]; onDictionariesChange: (next: CustomDictionary[]) => void; savedPlay?: { active?: PlayState; games?: Record<string, PlayState> }; onPlayChange: (value: { active: PlayState; games: Record<string, PlayState> }) => void }) {
+export function Player({ published, library = [], preview = false, preferPublished = false, dictionaries, onDictionariesChange, builtinDictionarySettings, onBuiltinDictionarySettingsChange, savedPlay, onPlayChange }: { published: Puzzle | null; library?: LibraryItem[]; preview?: boolean; preferPublished?: boolean; dictionaries: CustomDictionary[]; onDictionariesChange: (next: CustomDictionary[]) => void; builtinDictionarySettings: BuiltinDictionarySettings; onBuiltinDictionarySettingsChange: (next: BuiltinDictionarySettings) => void; savedPlay?: { active?: PlayState; games?: Record<string, PlayState> }; onPlayChange: (value: { active: PlayState; games: Record<string, PlayState> }) => void }) {
   const customEntries = useMemo(() => dictionaries.filter(item => item.useAutofill).flatMap(item => item.entries), [dictionaries]);
+  const builtinEntries = useMemo(() => dictionary.filter(entry => entry.source !== "custom" && builtinDictionarySettings[entry.source]), [builtinDictionarySettings]);
   const [dictionaryId, setDictionaryId] = useState(dictionaries[0]?.id ?? "");
   const selectedDictionary = dictionaries.find(item => item.id === dictionaryId) ?? dictionaries[0];
   const allEntries = useMemo(() => {
     const customWords = new Set(customEntries.map((entry) => entry.word));
-    return [...dictionary.filter((entry) => !customWords.has(entry.word)), ...customEntries];
-  }, [customEntries]);
+    return [...builtinEntries.filter((entry) => !customWords.has(entry.word)), ...customEntries];
+  }, [builtinEntries, customEntries]);
   const [size, setSize] = useState(11);
   const initial = !preview && !preferPublished && savedPlay?.active?.puzzle?.cells && savedPlay.active?.puzzle?.placements ? savedPlay.active : null;
   const [puzzleId, setPuzzleId] = useState(() => initial?.id ?? (library.at(-1)?.id || "generated"));
@@ -264,7 +266,7 @@ export function Player({ published, library = [], preview = false, preferPublish
           </>}
         </section>
       </main>
-      {!preview && <section className="dictionary-section"><div className="dictionary-heading"><span className="dictionary-icon"><Icon name="book" size={21} /></span><div><h2>Flere ord at lege med</h2><p>Ordbogen indeholder {new Set(dictionary.map((entry) => entry.word)).size} danske ord med ledetråde, blandt andet fra <a href="https://wordnet.dk/dannet" target="_blank" rel="noreferrer">DanNet</a> (CC BY-SA 4.0). Tilføj dine egne for mere variation.</p></div></div><details><summary>Udvid ordbogen <span>＋</span></summary><div className="dictionary-content"><label>Ordbog <select value={selectedDictionary?.id ?? ""} onChange={event => setDictionaryId(event.target.value)}>{dictionaries.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label htmlFor="dictionary-input">Ledetråd: svar|svar eller ord;ledetråd;ledetråd pr. linje</label><textarea id="dictionary-input" value={dictionaryText} onChange={(event) => setDictionaryText(event.target.value)} placeholder={'Pigenavn: Hanne|Sigrid\nCYKEL;Køretøj med to hjul'} rows={4} /><div className="dictionary-bottom"><button onClick={addEntries}>Gem ord</button><p>Gemt i denne browser · {customEntries.length} {customEntries.length === 1 ? "eget ord" : "egne ord"}</p></div><p role="status">{dictionaryMessage}</p></div></details></section>}
+      {!preview && <section className="dictionary-section"><div className="dictionary-heading"><span className="dictionary-icon"><Icon name="book" size={21} /></span><div><h2>Flere ord at lege med</h2><p>{new Set(allEntries.map((entry) => entry.word)).size} ord kan bruges i nye krydsord. Vælg de indbyggede samlinger, og tilføj dine egne. DanNet-data er under CC BY-SA 4.0.</p></div></div><details><summary>Vælg ordbøger og tilføj egne ord <span>＋</span></summary><div className="dictionary-content"><BuiltinDictionaryOptions settings={builtinDictionarySettings} onChange={onBuiltinDictionarySettingsChange} /><label>Ordbog <select value={selectedDictionary?.id ?? ""} onChange={event => setDictionaryId(event.target.value)}>{dictionaries.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label htmlFor="dictionary-input">Ledetråd: svar|svar eller ord;ledetråd;ledetråd pr. linje</label><textarea id="dictionary-input" value={dictionaryText} onChange={(event) => setDictionaryText(event.target.value)} placeholder={'Pigenavn: Hanne|Sigrid\nCYKEL;Køretøj med to hjul'} rows={4} /><div className="dictionary-bottom"><button onClick={addEntries}>Gem ord</button><p>Gemt i denne browser · {customEntries.length} {customEntries.length === 1 ? "eget ord" : "egne ord"}</p></div><p role="status">{dictionaryMessage}</p></div></details></section>}
       <footer className="footer"><span>KRYDSVÆRK <span>✳</span> EN PAUSE MED MENING</span><span>GOD FORNØJELSE MED ORDENE</span></footer>
     </div></div>
   );

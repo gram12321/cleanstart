@@ -46,12 +46,12 @@ export function wordCells(word: GridWord): Point[] {
   }));
 }
 
-export function answerLetters(answer: string): string { return answer.replaceAll(" ", ""); }
+export function answerLetters(answer: string): string { return answer.replace(/[ -]/g, ""); }
 export function answerBreaks(answer: string): number[] {
   let letters = 0;
   const breaks: number[] = [];
   for (const char of answer) {
-    if (char === " ") breaks.push(letters);
+    if (char === " " || char === "-") breaks.push(letters);
     else letters++;
   }
   return breaks;
