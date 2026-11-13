@@ -31,12 +31,19 @@ export interface CustomDictionary {
   showSuggestions: boolean;
   useAutofill: boolean;
   entries: DictionaryEntry[];
+  /** Shared dictionaries are read-only copies owned by another user. */
+  shared?: boolean;
+  ownerLabel?: string;
+  /** User preference; shared dictionaries default to disabled. */
+  enabled?: boolean;
 }
 
 export function parseCustomDictionaries(saved: unknown): CustomDictionary[] {
   try {
     if (Array.isArray(saved)) return saved.filter(item => item && typeof item.id === "string" && typeof item.name === "string" && Array.isArray(item.entries)).map(item => ({
       id: item.id, name: item.name, showSuggestions: item.showSuggestions !== false, useAutofill: item.useAutofill !== false,
+      shared: item.shared === true, ownerLabel: typeof item.ownerLabel === "string" ? item.ownerLabel : undefined,
+      enabled: item.enabled === true,
       entries: validEntries(item.entries),
     }));
     return [];

@@ -12,6 +12,7 @@ export const STORAGE_KEYS = {
 export type PersistedData = Record<string, unknown>;
 
 export type PublicCrossword = { id: string; name: string; puzzle: unknown };
+export type SharedDictionary = { id: string; name: string; entries: unknown; owner_id: string };
 
 let loading: Promise<PersistedData> | null = null;
 
@@ -45,6 +46,10 @@ async function loadPersistedDataOnce(): Promise<PersistedData> {
     .order("created_at", { ascending: true });
   if (publicReadError) throw publicReadError;
   data.__public_crosswords = publicCrosswords ?? [];
+  const { data: sharedDictionaries, error: dictionaryError } = await supabase
+    .from("shared_dictionaries").select("id, name, entries, owner_id").order("name");
+  if (dictionaryError) throw dictionaryError;
+  data.__shared_dictionaries = sharedDictionaries ?? [];
   if (data.__local_storage_migrated !== true) {
     const migration: Record<string, unknown> = {};
     for (const key of Object.values(STORAGE_KEYS)) {
@@ -62,6 +67,23 @@ async function loadPersistedDataOnce(): Promise<PersistedData> {
     Object.assign(data, migration, { __local_storage_migrated: true });
   }
   return data;
+}
+
+export async function setSharedDictionary(dictionary: { id: string; name: string; entries: unknown } | null, id?: string): Promise<void> {
+  if (!supabase) throw new Error("Supabase er ikke konfigureret.");
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+  if (!session) throw new Error("Supabase-sessionen er udløbet.");
+  if (!dictionary) {
+    if (!id) return;
+    const { error } = await supabase.from("shared_dictionaries").delete().eq("id", id);
+    if (error) throw error;
+    return;
+  }
+  const { error } = await supabase.from("shared_dictionaries").upsert({
+    id: dictionary.id, owner_id: session.user.id, name: dictionary.name, entries: dictionary.entries, updated_at: new Date().toISOString(),
+  }, { onConflict: "id" });
+  if (error) throw error;
 }
 
 export async function publishPublicCrossword(name: string, puzzle: unknown): Promise<PublicCrossword> {
